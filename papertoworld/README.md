@@ -33,7 +33,7 @@ Push this folder to a repo and import it at vercel.com/new. Every push then rede
 | File | What it is |
 |---|---|
 | `index.html` | The whole app: UI, 3D world, sound engine, everything |
-| `vendor/three.min.js` | three.js r128 (MIT licence, see `THREE-LICENSE.txt`) |
+| `vendor/three.r186.min.js` | three.js r186 with GLTFLoader and SkeletonUtils, bundled into one minified script (MIT licence, see `THREE-LICENSE.txt`). The version is in the file name, so the year-long cache in `vercel.json` never serves a stale copy |
 | `og-image.png` | The preview picture when the link is shared |
 | `vercel.json` | Clean URLs, long caching for the library, basic security headers |
 
