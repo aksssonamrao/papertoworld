@@ -906,6 +906,8 @@ function addAnimal(kind,o,x,z,base){o.kind=kind;o.x=x;o.z=z;o.a=R()*6.283;o.stat
   o.g.traverse(m=>{if(m.isMesh)m.castShadow=true});scene.add(o.g);fauna.all.push(o);(fauna.byKind[kind]=fauna.byKind[kind]||[]).push(o);return o}
 function spawnFauna(){const C=W.cells;
   const nD=Math.min(6,C.graze.length/120|0);for(let i=0;i<nD;i++){const c=pick(C.graze);addAnimal('deer',makeDeer(),c[0],c[1],1)}
+  // rigged foxes (Khronos sample, see models/CREDITS.md) trot the meadow and forest edges once the model has loaded
+  if(foxProto){const nX=Math.min(3,C.graze.length/250|0);for(let i=0;i<nX;i++){const c=pick(C.graze);addAnimal('fox',makeFox(),c[0],c[1],1)}}
   const nR=Math.min(9,(C.meadow.length+C.flower.length)/70|0);for(let i=0;i<nR;i++){const c=pick(C.meadow.concat(C.flower));addAnimal('rabbit',makeRabbit(),c[0],c[1],1)}
   const nF=Math.min(16,C.deep.length/16|0);for(let i=0;i<nF;i++){const c=pick(C.deep);const f=addAnimal('fish',makeFish(),c[0],c[1],1);f.jump=6+R()*14}
   const fc=C.flower.concat(C.meadow.filter((_,i)=>i%4===0));const nB=Math.min(20,fc.length/8|0);for(let i=0;i<nB;i++){const c=pick(fc);const b=addAnimal('fly',makeFly(),c[0],c[1],1);b.ax=c[0];b.az=c[1];b.fr=.6+R()*.8}
@@ -924,21 +926,24 @@ function updateFauna(dt,et){
   if(!W)return;const night=sky.night,hero=mode==='walk'?heroS:null;
   for(const o of fauna.all){if(!o.g.visible&&o.kind!=='fly'&&o.kind!=='bird')continue;
     const scare=hero&&Math.hypot(hero.x-o.x,hero.z-o.z)<(o.kind==='deer'?.55:.35);
-    if(o.kind==='deer'||o.kind==='rabbit'){
-      const ok=o.kind==='deer'?grazeOK:meadowOK;
+    if(o.kind==='deer'||o.kind==='rabbit'||o.kind==='fox'){
+      const ok=o.kind==='rabbit'?meadowOK:grazeOK;
       if(scare&&o.state!=='flee'){o.state='flee';o.t=1.4;const a=Math.atan2(o.z-hero.z,o.x-hero.x);o.tx=o.x+Math.cos(a)*1.2;o.tz=o.z+Math.sin(a)*1.2}
       o.t-=dt;
-      if(o.state==='idle'){if(o.t<0){const p=landPt(o.x,o.z,o.kind==='deer'?1.4:.6,ok);if(p){o.tx=p[0];o.tz=p[1];o.state='move';o.t=8}else o.t=2}}
+      if(o.state==='idle'){if(o.t<0){const p=landPt(o.x,o.z,o.kind==='rabbit'?.6:1.4,ok);if(p){o.tx=p[0];o.tz=p[1];o.state='move';o.t=8}else o.t=2}}
       if(o.state==='move'||o.state==='flee'){const dx=o.tx-o.x,dz=o.tz-o.z,d=Math.hypot(dx,dz);
         o.a=angLerp(o.a,Math.atan2(dz,dx),1-Math.exp(-dt*6));
-        let sp=o.kind==='deer'?(o.state==='flee'?.55:.09):(o.state==='flee'?.45:.2);
+        let sp=o.kind==='deer'?(o.state==='flee'?.55:.09):o.kind==='fox'?(o.state==='flee'?.5:.1):(o.state==='flee'?.45:.2);
         if(o.kind==='rabbit'){o.ph+=dt*(o.state==='flee'?14:9);sp*=Math.max(0,Math.sin(o.ph))*1.6}else o.ph+=dt*sp*90;
         const nx=o.x+Math.cos(o.a)*sp*dt,nz=o.z+Math.sin(o.a)*sp*dt;
         if(ok(nx,nz)||o.state==='flee'&&waterAt(nx,nz)<.3&&Math.abs(nx)<HW-.1&&Math.abs(nz)<HW-.1&&!hitObst(nx,nz,.03)){o.x=nx;o.z=nz}else{o.state='idle';o.t=.5+R()*2}
-        if(d<.04||o.t<0){o.state='idle';o.t=o.kind==='deer'?2+R()*5:.6+R()*2.5}}
+        if(d<.04||o.t<0){o.state='idle';o.t=o.kind==='rabbit'?.6+R()*2.5:2+R()*5}}
       const y=hAt(o.x,o.z);o.g.position.set(o.x,y+(o.kind==='rabbit'?Math.abs(Math.sin(o.ph))*.025*(o.state==='idle'?0:1):0),o.z);o.g.rotation.y=-o.a;
       if(o.kind==='deer'){const moving=o.state!=='idle';o.neck.rotation.z=lerp(o.neck.rotation.z,moving?0:-1.05+Math.sin(et*.7+o.ph)*.1,1-Math.exp(-dt*3));
         o.legs.forEach((L,k)=>L.rotation.z=moving?Math.sin(o.ph+(k%2?Math.PI:0)+(k>1?Math.PI/2:0))*.6:0)}
+      if(o.kind==='fox'){const st=o.state==='flee'?'run':o.state==='move'?'walk':'survey';
+        if(st!==o.cur){const a=o.acts[st];if(a){a.reset().play();if(o.cur&&o.acts[o.cur])o.acts[o.cur].crossFadeTo(a,.3,false);o.cur=st}}
+        if(o.acts.walk)o.acts.walk.timeScale=1.5;o.mixer.update(dt)}
     }else if(o.kind==='fish'){
       o.g.visible=season!=='winter'&&growT>4.6;if(!o.g.visible)continue;o.jump-=dt;
       if(o.state==='jump'){o.jt+=dt/.75;const p=o.jt;o.x+=Math.cos(o.a)*.12*dt;o.z+=Math.sin(o.a)*.12*dt;o.g.position.set(o.x,WATER_Y-.02+Math.sin(Math.PI*p)*.13,o.z);o.g.rotation.set(0,-o.a,(.5-p)*2.2);
@@ -1425,7 +1430,7 @@ $('#tRec').onclick=async()=>{if(rec){rec.stop();return}
   rec.start(500);recT0=performance.now();$('#tRec').classList.add('on');$('#tRec').setAttribute('aria-label','Stop recording');toast('Recording. Tap again to stop.')};
 
 /* ================= field journal ================= */
-const JOURNAL=[['deer','🦌','Deer','Walk slowly near meadows'],['rabbit','🐇','Rabbit','Meadows and flower fields'],['fish','🐟','Leaping fish','Wait by deep water'],
+const JOURNAL=[['deer','🦌','Deer','Walk slowly near meadows'],['rabbit','🐇','Rabbit','Meadows and flower fields'],['fox','🦊','Fox','Keep still at a meadow edge'],['fish','🐟','Leaping fish','Wait by deep water'],
   ['fly','🦋','Butterfly','Flowers on a warm day'],['bird','🐦','Birds','Look up in daylight'],['boat','⛵','Paper boat','Big lakes sometimes have one'],
   ['firefly','✨','Fireflies','Near trees, after dark'],['campfire','🔥','Campfire','Stamp one and sit close'],['windmill','🌾','Windmill','Stamp one on a meadow'],
   ['beam','🔦','Lighthouse beam','Stand near a lighthouse at night'],['peak','🏔️','Snowy peak','Climb a tall mountain'],['swim','🏊','A swim','Walk into deep water'],
@@ -1444,7 +1449,7 @@ function renderJournal(){renderCatches();const L=$('#jList');if(!L)return;L.text
 let jT=0;
 function checkJournal(dt){if(mode!=='walk'||!W)return;jT+=dt;if(jT<.35)return;jT=0;const s=heroS,d2=(x,z)=>Math.hypot(x-s.x,z-s.z);
   for(const o of fauna.all){if(!o.g.visible)continue;const d=d2(o.g.position.x,o.g.position.z);
-    if(o.kind==='deer'&&d<.7)discover('deer');else if(o.kind==='rabbit'&&d<.5)discover('rabbit');else if(o.kind==='fish'&&o.state==='jump'&&d<1.5)discover('fish');
+    if(o.kind==='deer'&&d<.7)discover('deer');else if(o.kind==='fox'&&d<.6)discover('fox');else if(o.kind==='rabbit'&&d<.5)discover('rabbit');else if(o.kind==='fish'&&o.state==='jump'&&d<1.5)discover('fish');
     else if(o.kind==='fly'&&d<.5)discover('fly');else if(o.kind==='bird'&&d<3.2)discover('bird');else if(o.kind==='boat'&&d<1.3)discover('boat')}
   if(sky.night>.6&&season!=='winter'&&W.flies&&W.flies.some(f=>d2(f.x,f.z)<.8))discover('firefly');
   for(const b of W.props||[]){const d=d2(b.x,b.z);if(b.k==='campfire'&&d<.35)discover('campfire');else if(b.k==='windmill'&&d<.5)discover('windmill');else if(b.k==='lighthouse'&&d<2.2&&sky.night>.55)discover('beam')}
@@ -1625,7 +1630,13 @@ function animSkin(H,dt,sp,swim,night,fishing,waving){const S=H.skin;
   H.g.getWorldQuaternion(skinQ);S.handR.getWorldQuaternion(skinQ2);
   H.lant.quaternion.copy(skinQ2.invert()).multiply(skinQ);H.lant.scale.setScalar(HS/S.handR.getWorldScale(skinWant).x);
   if(rodG.parent===S.handR){rodG.quaternion.copy(H.lant.quaternion).multiply(skinUp.setFromEuler(skinTilt));rodG.scale.copy(H.lant.scale)}}
+let foxProto=null,FOX_S=1,FOX_R=Math.PI/2;
+function makeFox(){const g=new THREE.Group(),m=THREE.SkeletonUtils.clone(foxProto.scene),w=new THREE.Group();w.add(m);w.scale.setScalar(FOX_S);w.rotation.y=FOX_R;g.add(w);
+  m.traverse(o=>{if(o.isMesh){o.castShadow=true;o.frustumCulled=false}});
+  const mixer=new THREE.AnimationMixer(m),acts={};for(const c of foxProto.animations)acts[{Survey:'survey',Walk:'walk',Run:'run'}[c.name]||c.name]=mixer.clipAction(c);return {g,mixer,acts,cur:null}}
 const gltfL=new THREE.GLTFLoader();
+gltfL.loadAsync('models/fox.glb').then(g=>{const s=new THREE.Box3().setFromObject(g.scene).getSize(new THREE.Vector3());FOX_S=.068/Math.max(s.x,s.z);FOX_R=s.z>s.x?Math.PI/2:0;foxProto=g;
+  const w=makeFox();w.g.position.set(0,-3,0);warmQ.push(w.g)}).catch(()=>{});
 Promise.all([gltfL.loadAsync('models/wanderer.glb'),fetch('models/moves.json').then(r=>{if(!r.ok)throw 0;return r.json()})]).then(([g,clips])=>{
   skinProto=g.scene;skinClips=clips.map(c=>THREE.AnimationClip.parse(c));skinFor(hero);
   const w=THREE.SkeletonUtils.clone(skinProto);w.traverse(o=>{if(o.isMesh){o.castShadow=true;o.material=o.material.clone();if(o.material.name==='MI_Superhero_Male')dressMaterial(o.material,new THREE.Color())}});

@@ -34,7 +34,7 @@ Push this folder to a repo and import it at vercel.com/new. Every push then rede
 |---|---|
 | `index.html` | The whole app: UI, 3D world, sound engine, everything |
 | `vendor/three.r186.min.js` | three.js r186 with GLTFLoader and SkeletonUtils, bundled into one minified script (MIT licence, see `THREE-LICENSE.txt`). The version is in the file name, so the year-long cache in `vercel.json` never serves a stale copy |
-| `models/` | The skinned wanderer and its animation clips (Quaternius, CC0; see `models/CREDITS.md`). If they can't load, for example when opened from `file://`, the jointed wanderer walks instead |
+| `models/` | The skinned wanderer and its animation clips (Quaternius, CC0), and a rigged fox (Khronos sample; model CC0, animation CC BY 4.0). See `models/CREDITS.md`. If they can't load, for example when opened from `file://`, the jointed wanderer walks instead |
 | `og-image.png` | The preview picture when the link is shared |
 | `vercel.json` | Clean URLs, long caching for the library, basic security headers |
 
@@ -56,7 +56,7 @@ These use Claude's hosting runtime, so on Vercel they switch off cleanly. Worlds
 
 1. **Your strokes become regions, not shapes.** Every brush stamp writes into a 96×96 grid per ink type. On Grow, the grid is blurred and thresholded. This fills gaps and smooths wobbles, so rough scribbles turn into clean forests, rivers and hills. You can't really "draw it wrong".
 2. **The land is shaped from those regions.** Hills and mountains raise a heightfield: mountains use a ridged noise and get snow above a set height. Water dips below a translucent water surface. Paths flatten and get lanterns, and villages flatten and get houses.
-3. **Things grow depending on what's around them.** Pines grow up on mountains and leafy trees grow near water. Sand next to water gets palms, while sand away from water gets cacti. Big meadows get deer and rabbits, and big lakes get a paper boat. Bridges appear wherever a path crosses water.
+3. **Things grow depending on what's around them.** Pines grow up on mountains and leafy trees grow near water. Sand next to water gets palms, while sand away from water gets cacti. Big meadows get deer, rabbits and rigged, animated foxes, and big lakes get a paper boat. Bridges appear wherever a path crosses water.
 4. **Same drawing, same world.** A seed comes from your drawing, so it grows the same way every time. **Regrow** changes the seed.
 5. **Rendering.** Thousands of trees, grass tufts and flowers are drawn as instanced meshes, with a small shader that makes them sway in the wind. Glows, fireflies and chimney smoke use a custom point-sprite shader. Lighting blends between a desk-lamp look and a full sun/moon cycle. The water has wind-ripple normals, reflects the sky at grazing angles (Fresnel), catches a sun glint and shows a soft foam line at the shore.
 6. **Sound is synthesised live, with no audio files.** It includes wind, water that gets louder near it, birdsong, crickets, rain, footsteps that change with the ground, and campfire crackle. Growing trees play notes from their left-to-right position, so every drawing plays its own little tune.
