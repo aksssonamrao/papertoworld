@@ -34,6 +34,7 @@ Push this folder to a repo and import it at vercel.com/new. Every push then rede
 |---|---|
 | `index.html` | The whole app: UI, 3D world, sound engine, everything |
 | `vendor/three.r186.min.js` | three.js r186 with GLTFLoader and SkeletonUtils, bundled into one minified script (MIT licence, see `THREE-LICENSE.txt`). The version is in the file name, so the year-long cache in `vercel.json` never serves a stale copy |
+| `models/` | The skinned wanderer and its animation clips (Quaternius, CC0; see `models/CREDITS.md`). If they can't load, for example when opened from `file://`, the jointed wanderer walks instead |
 | `og-image.png` | The preview picture when the link is shared |
 | `vercel.json` | Clean URLs, long caching for the library, basic security headers |
 
@@ -59,7 +60,7 @@ These use Claude's hosting runtime, so on Vercel they switch off cleanly. Worlds
 4. **Same drawing, same world.** A seed comes from your drawing, so it grows the same way every time. **Regrow** changes the seed.
 5. **Rendering.** Thousands of trees, grass tufts and flowers are drawn as instanced meshes, with a small shader that makes them sway in the wind. Glows, fireflies and chimney smoke use a custom point-sprite shader. Lighting blends between a desk-lamp look and a full sun/moon cycle. The water has wind-ripple normals, reflects the sky at grazing angles (Fresnel), catches a sun glint and shows a soft foam line at the shore.
 6. **Sound is synthesised live, with no audio files.** It includes wind, water that gets louder near it, birdsong, crickets, rain, footsteps that change with the ground, and campfire crackle. Growing trees play notes from their left-to-right position, so every drawing plays its own little tune.
-7. **Walking.** A jointed character with walk, jog, swim and fishing poses. The over-the-shoulder camera doesn't clip into hills, and route-finding (A*) walks you around trees, over bridges and along paths.
+7. **Walking.** A skinned, motion-captured-style character (Quaternius CC0) with idle, walk, jog, sprint, swim and torch clips. A small shader dresses it in a jacket in your colour, trousers and boots, and the hat, scarf, pack, lantern and rod ride on its bones. The over-the-shoulder camera doesn't clip into hills, and route-finding (A*) walks you around trees, over bridges and along paths.
 
 ## Performance
 

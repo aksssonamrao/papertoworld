@@ -1073,7 +1073,7 @@ function updateAudio(dt){if(!AC)return;const t=AC.currentTime,st=(g,v)=>g.gain.s
 $('#tSound').onclick=()=>{ensureAudio();muted=!muted;$('#tSound').setAttribute('aria-pressed',!muted);$('#wave').style.display=muted?'none':'';if(master)master.gain.setTargetAtTime(muted?0:.9,AC.currentTime,.05)};
 
 /* ================= your wanderer's look ================= */
-const JACKETS=['#a24e38','#3d6fa8','#4f7a3a','#d9a13b','#7a4f9a','#2f3a44'],SCARVES=['#dfae45','#e8e2d4','#c8553d','#6fa0c8','#8fbf6a'];
+const JACKETS=['#3d6fa8','#a24e38','#4f7a3a','#d9a13b','#7a4f9a','#2f3a44'],SCARVES=['#dfae45','#e8e2d4','#c8553d','#6fa0c8','#8fbf6a'];
 const HATS=[['ranger','Ranger'],['beanie','Beanie'],['flowers','Flowers'],['none','None']];
 function sanitizeLook(l){l=l&&typeof l==='object'?l:{};return {jacket:JACKETS.includes(l.jacket)?l.jacket:JACKETS[0],scarf:SCARVES.includes(l.scarf)?l.scarf:SCARVES[0],hat:HATS.some(h=>h[0]===l.hat)?l.hat:'ranger'}}
 let myLook=sanitizeLook(null);try{myLook=sanitizeLook(JSON.parse(localStorage.getItem('pw-look')||'null'))}catch(_){}
@@ -1161,6 +1161,7 @@ function animHero(dt,et){const H=hero,s=heroS,A0=anim;
   H.tail.rotation.x=.25+s.sp*3.5+Math.sin(et*9)*.08*m;H.tail.rotation.z=Math.sin(et*6.3)*.1*m;
   H.lant.visible=lantOn;H.lant.rotation.x=-a0(H)*.6+Math.sin(et*4)*.05*m;
   H.g.position.set(s.x,s.y,s.z);H.g.rotation.y=s.face;H.g.visible=!s.fp&&mode!=='draw';
+  if(H.skin)animSkin(H,dt,s.sp,s.swim,sky.night>.4,fishS.state!=='idle',heroWave>0);
   if(H===hero&&heroLight.intensity>0)H.lb.getWorldPosition(heroLight.position)}
 const a0=H=>H.arms[1].sh.rotation.x+H.arms[1].elbow.rotation.x;
 function footstep(){const s=heroS,t=typeAt(s.x,s.z),onB=W&&W.bridge[cellOf(s.x,s.z)],fz=season==='winter'&&waterAt(s.x,s.z)>.45;
@@ -1567,6 +1568,68 @@ function updateFishing(dt,et,input){const b=$('#tFish');
   for(let i=0;i<LINE_N;i++){const t=i/(LINE_N-1);p.setXYZ(i,lerp(rodTip.x,bx,t),lerp(rodTip.y,by+.006,t)-Math.sin(Math.PI*t)*sag,lerp(rodTip.z,bz,t))}p.needsUpdate=true}
 function fishPose(et){if(fishS.state==='idle')return;const a=hero.arms[1];a.sh.rotation.x=-.95+(fishS.state==='bite'?Math.sin(et*25)*.05:0);a.sh.rotation.z=.12;a.elbow.rotation.x=-.55;hero.lant.visible=false}
 $('#tFish').onclick=tapFish;
+
+/* ================= the wanderer, skinned (Quaternius CC0 body + animation library) =================
+   Loaded after start-up; until it arrives (or if it cannot load, e.g. opened from file://) the jointed wanderer walks instead.
+   The base body is bare, so a small shader dresses it by region of its rest pose: boots, trousers, belt and a jacket in your
+   colour. The hat, scarf, pack, lantern and rod from the jointed wanderer ride on its bones. */
+const SKIN_H=.118,skinTilt=new THREE.Euler(-.55,0,0);let skinProto=null,skinClips=null;
+const skinWant=new THREE.Vector3(),skinQ=new THREE.Quaternion(),skinQ2=new THREE.Quaternion(),skinUp=new THREE.Quaternion();
+function dressMaterial(m,jacket){m.onBeforeCompile=sh=>{sh.uniforms.uJacket={value:jacket};
+  sh.vertexShader='varying vec3 vRest;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvRest=position;');
+  sh.fragmentShader='uniform vec3 uJacket;\nvarying vec3 vRest;\n'+sh.fragmentShader.replace('#include <map_fragment>',`#include <map_fragment>
+{vec3 p=vRest;float lum=dot(diffuseColor.rgb,vec3(.3,.55,.15));float fold=.72+.5*lum;float ax=abs(p.x);
+ bool hand=ax>.655, head=p.y>1.515&&ax<.2;
+ vec3 cl=diffuseColor.rgb;
+ if(p.y<.25) cl=vec3(.2,.14,.1)*(p.y>.22?.75:1.);                                        // boots
+ else if(p.y<.975) cl=vec3(.25,.25,.29)*(.9+.08*lum)*(ax>.02?1.:.8);                                   // trousers
+ else if(p.y<1.02&&ax<.24) cl=vec3(.2,.14,.1)*fold;                             // belt
+ else if(!hand&&!head){float cloth=.8+.06*lum+.08*sin(p.y*90.)*sin(p.x*70.+p.z*40.)*.0;                                  // jacket and sleeves: flatter than skin
+   cl=uJacket*cloth*(1.-.1*smoothstep(1.3,1.02,p.y));
+   if(ax<.013&&p.z>0.&&p.y<1.46) cl*=.55;                                        // zip
+   if(p.y>1.43&&ax<.15) cl=mix(cl,cl*.62,.8);                                    // collar
+   if(ax>.6) cl*=.6;                                                             // cuffs
+   if(p.y<1.08&&ax<.24) cl*=.8;                                                  // hem
+   if(ax>.07&&ax<.115&&p.y>1.08&&p.y<1.5) cl=vec3(.24,.17,.11);}                  // pack straps
+ diffuseColor.rgb=cl;}`)};m.customProgramCacheKey=()=>'pw-dress';m.needsUpdate=true}
+function attachAt(bone,obj,x,y,z){bone.updateWorldMatrix(true,false);const inv=new THREE.Matrix4().copy(bone.matrixWorld).invert();
+  new THREE.Matrix4().multiplyMatrices(inv,new THREE.Matrix4().makeTranslation(x,y,z)).decompose(obj.position,obj.quaternion,obj.scale);bone.add(obj)}
+function skinFor(H){if(!skinProto||H.skin)return;const model=THREE.SkeletonUtils.clone(skinProto),bones={};
+  model.traverse(o=>{if(o.isBone)bones[o.name]=o;if(o.isMesh){o.castShadow=true;o.frustumCulled=false;o.material=o.material.clone();
+    if(o.material.name==='MI_Superhero_Male')dressMaterial(o.material,H.jacket.color);else if(o.material.name.includes('Hair'))o.material.color.set('#4a3426')}});
+  model.updateMatrixWorld(true);
+  // the jointed wanderer's accessories were modelled in metres around a 1.75 m body: move them onto the bones
+  const hatHold=new THREE.Group();attachAt(bones.Head,hatHold,0,1.6,.005);hatHold.add(H.hatG);H.hatG.position.set(0,-.02,0);H.hatG.scale.setScalar(1.02);
+  const sc=new THREE.Mesh(new THREE.TorusGeometry(.07,.03,8,18),H.scarf);sc.rotation.x=Math.PI/2;const scW=new THREE.Group();scW.add(sc);
+  const tail=new THREE.Mesh(new THREE.BoxGeometry(.06,.2,.018),H.scarf);tail.position.set(.04,-.1,-.08);tail.rotation.x=.25;scW.add(tail);attachAt(bones.neck_01,scW,0,1.53,-.03);
+  const pack=new THREE.Group(),pm=new THREE.MeshStandardMaterial({color:'#76583a',roughness:.82});
+  pack.add(new THREE.Mesh(new THREE.BoxGeometry(.3,.36,.15),pm));const flap=new THREE.Mesh(new THREE.BoxGeometry(.31,.1,.16),new THREE.MeshStandardMaterial({color:'#654a30',roughness:.82}));flap.position.y=.16;pack.add(flap);
+  const roll=new THREE.Mesh(new THREE.CylinderGeometry(.065,.065,.36,12),new THREE.MeshStandardMaterial({color:'#7f8a62',roughness:.82}));roll.rotation.z=Math.PI/2;roll.position.y=.26;pack.add(roll);
+  pack.traverse(m=>{if(m.isMesh)m.castShadow=true});attachAt(bones.spine_03,pack,0,1.26,-.24);
+  const handR=new THREE.Group();attachAt(bones.hand_r,handR,-.74,1.45,-.06);
+  const wrap=new THREE.Group();wrap.scale.setScalar(SKIN_H/1.81);wrap.add(model);H.g.add(wrap);H.body.visible=false;
+  const mixer=new THREE.AnimationMixer(model),acts={};for(const c of skinClips){acts[c.name]=mixer.clipAction(c)}
+  H.skin={model,wrap,bones,mixer,acts,cur:null,handR};acts.idle.play();H.skin.cur='idle';
+  if(H===hero){handR.add(H.lant);H.lant.position.set(0,0,0);handR.add(rodG);rodG.position.set(0,0,0)}}
+function skinPlay(S,name,fade=.25){if(S.cur===name)return;const a=S.acts[name];if(!a)return;a.reset().play();if(S.cur)S.acts[S.cur].crossFadeTo(a,fade,false);S.cur=name}
+function animSkin(H,dt,sp,swim,night,fishing,waving){const S=H.skin;
+  let clip='idle',ts=1;
+  if(swim){clip=sp>.03?'swim':'tread'}
+  else if(fishing)clip='torch';
+  else if(sp>.03){if(sp<.24){clip='walk';ts=clamp(sp/.1,.7,1.9)}else if(sp<.48){clip='jog';ts=clamp(sp/.24,.75,1.6)}else{clip='sprint';ts=clamp(sp/.45,.8,1.5)}}
+  else if(waving)clip='dance';else if(night)clip='torch';
+  skinPlay(S,clip);S.acts[clip].timeScale=ts;S.mixer.update(dt);
+  // the swim clips lie the body flat, lower than standing: float it up to the surface
+  S.wrap.position.y=lerp(S.wrap.position.y,swim?.042:0,1-Math.exp(-dt*6));
+  // the lantern hangs straight and the rod points ahead whatever the hand is doing
+  H.g.getWorldQuaternion(skinQ);S.handR.getWorldQuaternion(skinQ2);
+  H.lant.quaternion.copy(skinQ2.invert()).multiply(skinQ);H.lant.scale.setScalar(HS/S.handR.getWorldScale(skinWant).x);
+  if(rodG.parent===S.handR){rodG.quaternion.copy(H.lant.quaternion).multiply(skinUp.setFromEuler(skinTilt));rodG.scale.copy(H.lant.scale)}}
+const gltfL=new THREE.GLTFLoader();
+Promise.all([gltfL.loadAsync('models/wanderer.glb'),fetch('models/moves.json').then(r=>{if(!r.ok)throw 0;return r.json()})]).then(([g,clips])=>{
+  skinProto=g.scene;skinClips=clips.map(c=>THREE.AnimationClip.parse(c));skinFor(hero);
+  const w=THREE.SkeletonUtils.clone(skinProto);w.traverse(o=>{if(o.isMesh){o.castShadow=true;o.material=o.material.clone();if(o.material.name==='MI_Superhero_Male')dressMaterial(o.material,new THREE.Color())}});
+  w.scale.setScalar(SKIN_H/1.81);warmQ.push(w);w.position.set(0,-3,0);w.traverse(m=>{m.frustumCulled=false})}).catch(()=>{});
 
 /* ================= wind in the leaves ================= */
 const windU={uTime:{value:0},uWind:{value:.8}};
