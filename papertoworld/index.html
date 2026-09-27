@@ -1578,7 +1578,7 @@ $('#tFish').onclick=tapFish;
    Loaded after start-up; until it arrives (or if it cannot load, e.g. opened from file://) the jointed wanderer walks instead.
    The base body is bare, so a small shader dresses it by region of its rest pose: boots, trousers, belt and a jacket in your
    colour. The hat, scarf, pack, lantern and rod from the jointed wanderer ride on its bones. */
-const SKIN_H=.118,skinTilt=new THREE.Euler(-.55,0,0);let skinProto=null,skinClips=null;
+const SKIN_H=.118,skinTilt=new THREE.Euler(-.55,0,0),skinY=new THREE.Vector3(0,1,0);let skinProto=null,skinClips=null;
 const skinWant=new THREE.Vector3(),skinQ=new THREE.Quaternion(),skinQ2=new THREE.Quaternion(),skinUp=new THREE.Quaternion();
 function dressMaterial(m,jacket){m.onBeforeCompile=sh=>{sh.uniforms.uJacket={value:jacket};
   sh.vertexShader='varying vec3 vRest;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvRest=position;');
@@ -1586,7 +1586,7 @@ function dressMaterial(m,jacket){m.onBeforeCompile=sh=>{sh.uniforms.uJacket={val
 {vec3 p=vRest;float lum=dot(diffuseColor.rgb,vec3(.3,.55,.15));float fold=.72+.5*lum;float ax=abs(p.x);
  bool hand=ax>.655, head=p.y>1.515&&ax<.2;
  vec3 cl=diffuseColor.rgb;
- if(p.y<.25) cl=vec3(.2,.14,.1)*(p.y>.22?.75:1.);                                        // boots
+ if(p.y<.25) cl=vec3(.085,.065,.05)*(p.y>.22?1.4:p.y<.02?.6:1.);                                        // boots
  else if(p.y<.975) cl=vec3(.25,.25,.29)*(.9+.08*lum)*(ax>.02?1.:.8);                                   // trousers
  else if(p.y<1.02&&ax<.24) cl=vec3(.2,.14,.1)*fold;                             // belt
  else if(!hand&&!head){float cloth=.8+.06*lum+.08*sin(p.y*90.)*sin(p.x*70.+p.z*40.)*.0;                                  // jacket and sleeves: flatter than skin
@@ -1626,6 +1626,12 @@ function animSkin(H,dt,sp,swim,night,fishing,waving){const S=H.skin;
   skinPlay(S,clip);S.acts[clip].timeScale=ts;S.mixer.update(dt);
   // the swim clips lie the body flat, lower than standing: float it up to the surface
   S.wrap.position.y=lerp(S.wrap.position.y,swim?.042:0,1-Math.exp(-dt*6));
+  // glance at the nearest animal, the way people do: head turns up to ~57°, eased in and out
+  if(H===hero){let tgt=null,bd=1.1;for(const o of fauna.all){if(!o.g.visible||o.kind==='fish')continue;const d=Math.hypot(o.g.position.x-heroS.x,o.g.position.z-heroS.z);if(d<bd){bd=d;tgt=o.g.position}}
+    let want=0;if(tgt&&!swim){want=((Math.atan2(tgt.x-heroS.x,tgt.z-heroS.z)-heroS.face+Math.PI*3)%(Math.PI*2))-Math.PI;if(Math.abs(want)>1.9)want=0;want=clamp(want,-1,1)}
+    S.look=lerp(S.look||0,want,1-Math.exp(-dt*3));
+    if(Math.abs(S.look)>.01){const hb=S.bones.Head;hb.updateWorldMatrix(true,false);hb.parent.getWorldQuaternion(skinQ2);hb.getWorldQuaternion(skinQ);
+      skinUp.setFromAxisAngle(skinY,S.look);skinQ.premultiply(skinUp);hb.quaternion.copy(skinQ2.invert().multiply(skinQ))}}
   // the lantern hangs straight and the rod points ahead whatever the hand is doing
   H.g.getWorldQuaternion(skinQ);S.handR.getWorldQuaternion(skinQ2);
   H.lant.quaternion.copy(skinQ2.invert()).multiply(skinQ);H.lant.scale.setScalar(HS/S.handR.getWorldScale(skinWant).x);
