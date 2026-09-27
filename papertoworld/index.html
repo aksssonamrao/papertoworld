@@ -143,6 +143,14 @@ body.walking .mark{ display:none; }
   #tray .pots{ grid-template-columns:repeat(5,1fr); } #tray .primary{ margin-top:auto; } #tray .row{ flex-wrap:wrap; row-gap:6px; }
   #intro{ left:auto; right:12px; margin:0; bottom:calc(env(safe-area-inset-bottom,0px) + 16px); width:min(380px, calc(100% - 340px)); }
 }
+.split{ display:flex; }
+.split .ghost:first-child{ border-radius:11px 0 0 11px; }
+.split .ghost:last-child{ border-radius:0 11px 11px 0; border-left:0; padding:0 7px; display:grid; place-items:center; }
+.split svg{ width:16px; height:16px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+#surprisePop{ top:auto; z-index:5; max-height:calc(100vh - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px) - 24px); overflow-y:auto; touch-action:pan-y; }
+@media (max-width:420px){ .row{ gap:4px; } .row .ghost{ padding:8px 7px; font-size:12.5px; } .size{ width:30px; } }
+@media (max-height:560px){ .menu button{ padding:8px 10px; } }
+#surprisePop .em{ width:22px; text-align:center; font-size:17px; flex:none; }
 .hidden{ display:none !important; }
 button:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
 </style>
@@ -180,6 +188,7 @@ button:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
   <div class="seg" id="segWx"><button data-v="0" aria-pressed="true">Clear</button><button data-v="1" aria-pressed="false">Rain</button></div>
 </div>
 
+<div id="surprisePop" class="pop menu hidden" role="menu" aria-label="Surprise me with"></div>
 <div id="morepop" class="pop menu hidden" role="menu">
   <button id="mJournal" role="menuitem"><svg viewBox="0 0 24 24"><path d="M5 4.5h11a3 3 0 0 1 3 3v12H8a3 3 0 0 1-3-3z"/><path d="M5 16.5a3 3 0 0 1 3-3h11"/></svg>Field journal</button>
   <button id="mLook" role="menuitem"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="3.5"/><path d="M5 20c.8-4 3.6-6 7-6s6.2 2 7 6"/></svg>Your wanderer</button>
@@ -234,7 +243,7 @@ button:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
     </div>
     <button class="ghost" id="undo">Undo</button>
     <button class="ghost" id="clear">Clear</button>
-    <button class="ghost" id="surprise">Surprise me</button>
+    <span class="split"><button class="ghost" id="surprise">Surprise me</button><button class="ghost" id="surpriseMenu" aria-label="Choose a kind of surprise" aria-haspopup="menu" aria-expanded="false"><svg viewBox="0 0 24 24"><path d="M7 10l5 5 5-5"/></svg></button></span>
   </div>
   <button class="primary" id="grow">Grow it</button>
 </section>
@@ -504,24 +513,87 @@ $$('#trayTabs button').forEach(b=>b.onclick=()=>{tool=b.dataset.v;$$('#trayTabs 
 $$('.size').forEach(b=>b.onclick=()=>{brush=+b.dataset.s;$$('.size').forEach(o=>o.setAttribute('aria-pressed',o===b))});
 
 let queue=[];
-$('#surprise').onclick=()=>{pushUndo();queue=[];srand(Date.now()%1e9);
-  const base=[],late=[];
-  const line=(arr,t,pts,r)=>{for(let k=0;k<pts.length-1;k++){const [ax,az]=pts[k],[bx,bz]=pts[k+1],n=Math.ceil(Math.hypot(bx-ax,bz-az)/(r*.3));for(let s=0;s<n;s++)arr.push([t,lerp(ax,bx,s/n)+(R()-.5)*.15,lerp(az,bz,s/n)+(R()-.5)*.15,r])}};
-  const blob=(arr,t,x,z,rad,r)=>{for(let k=0;k<rad*rad*9;k++){const a=R()*6.28,d=Math.sqrt(R())*rad;arr.push([t,x+Math.cos(a)*d,z+Math.sin(a)*d*.8,r])}};
-  const ph=R()*6,fl=R()<.5?1:-1;const river=[];for(let x=-8.3;x<=8.3;x+=.5)river.push([x*fl,Math.sin(x*.45+ph)*1.4+.5]);
-  const rz=x=>Math.sin(x*fl*.45+ph)*1.4+.5;
-  blob(base,2,-3.8,3.8,2.7,.9);blob(base,2,2.6,-.4,1.5,.8);
-  blob(base,1,-3.6,-4.2,2.8,.9);blob(base,1,4.3,4.8,2.2,.9);blob(base,1,-6.2,.9,1.1,.7);
-  blob(base,8,4.8,-5,2.3,1.1);blob(base,4,1.2,-5.6,1.4,1);
-  blob(base,6,-4.8,5.4,1.2,.7);blob(base,6,2.9,.2,.9,.6);
-  blob(base,7,5.8,rz(5.8)+1.1,1.1,.7);blob(base,7,-2,rz(-2)-1.1,.8,.6);
-  base.sort(()=>R()-.5);
-  line(late,3,river,.75);blob(late,3,-1.4,5.8,.9,.7);
-  line(late,5,[[-7.5,6.9],[-5,4.3],[-2.6,2.6],[-.4,1.2],[1.6,-1.8],[3.2,-3.4]],.38);
-  blob(late,9,-.9,3.4,.9,.6);blob(late,9,1.6,-2.6,.6,.5);
-  const st=[['s','campfire',-1.9,2.3],['s','windmill',-4.6,3.1],['s','tent',-2.4,-1.3],['s','lighthouse',6.7,rz(6.7)+.85]];
-  stamps=[];queue=base.concat(late,st);
-};
+/* ================= surprise me: themed landscapes ================= */
+// each theme paints in layers (later layers win); strokes inside a layer are shuffled so it looks hand-painted,
+// and the whole sheet is then turned and mirrored at random, so every theme comes out differently each time
+const SURPRISES=[
+  {k:'valley',name:'River valley',e:'🏞️',make(S){const ph=R()*6,rz=x=>Math.sin(x*.45+ph)*1.4+.5,river=[];for(let x=-8.3;x<=8.3;x+=.5)river.push([x,rz(x)]);
+    S.patch(2,-3.8,3.8,2.7);S.patch(2,2.6,-.4,1.5);S.patch(1,-3.6,-4.2,2.8);S.patch(1,4.3,4.8,2.2);S.patch(1,-6.2,.9,1.1);
+    S.patch(8,4.8,-5,2.3,1.1);S.patch(4,1.2,-5.6,1.4,1);S.patch(6,-4.8,5.4,1.2,.7);S.patch(6,2.9,.2,.9,.6);S.blob(7,5.8,rz(5.8)+1.1,1.1,.7);S.blob(7,-2,rz(-2)-1.1,.8,.6);
+    S.next();S.line(3,river,.75);S.blob(3,-1.4,5.8,.9,.7);
+    S.next();S.line(5,S.wander([[-7.5,6.9],[-2.6,2.6],[1.6,-1.8],[3.2,-3.4]],.6),.38);S.blob(9,-.9,3.4,.9,.6);S.blob(9,1.6,-2.6,.6,.5);
+    S.stamp('campfire',-1.9,2.3);S.stamp('windmill',-4.6,3.1);S.stamp('tent',-2.4,-1.3);S.stamp('lighthouse',6.7,rz(6.7)+.85)}},
+  {k:'islands',name:'Archipelago',e:'🏝️',make(S){S.fill(3,1.2);
+    const isl=[[-2.4+S.j(1),1+S.j(1),3.1],[4+S.j(.8),-3.6+S.j(.8),1.9],[4.4+S.j(.6),4.2+S.j(.6),1.4],[-5.4+S.j(.6),-5+S.j(.6),1.2]];
+    S.next();isl.forEach(([x,z,r])=>S.patch(7,x,z,r*1.15,.8));
+    S.next();S.patch(2,isl[0][0],isl[0][1],isl[0][2]*.8);S.patch(1,isl[1][0],isl[1][1],isl[1][2]*.65);S.patch(1,isl[2][0],isl[2][1],isl[2][2]*.6);S.patch(6,isl[3][0],isl[3][1],isl[3][2]*.5,.6);
+    S.next();const [mx,mz,mr]=isl[0];S.patch(1,mx-mr*.45,mz-mr*.35,mr*.4);S.blob(1,mx+mr*.35,mz-mr*.45,mr*.3,.8);S.blob(9,mx+mr*.1,mz+mr*.2,.8,.55);S.line(5,S.wander([[mx+mr*.1,mz+mr*.2],[mx+mr*.2,mz+mr*1.1]],.4),.36);
+    const a=R()*6.28;S.stamp('lighthouse',isl[1][0]+Math.cos(a)*isl[1][2]*1.05,isl[1][1]+Math.sin(a)*isl[1][2]*1.05);S.stamp('windmill',mx-mr*.2,mz+mr*.45);S.stamp('tent',isl[2][0],isl[2][1]+.4);S.stamp('campfire',isl[2][0]+.45,isl[2][1]+.55)}},
+  {k:'lake',name:'Mountain lake',e:'🏔️',make(S){S.patch(2,0,1.5,5.2,1);S.patch(1,-5,1.5,2.4);S.patch(1,5,2,2.2);S.patch(1,-2.5,6,2);S.patch(1,3,6.2,1.8);S.patch(6,-1.8,4.6,.9,.6);
+    S.next();[[-5.2,-5.4,2.6],[0,-6.3,2.3],[5.2,-5,2.6],[6.4,.6,1.8],[-6.4,.4,1.7]].forEach(([x,z,r])=>S.patch(8,x+S.j(.5),z+S.j(.4),r,1.1));S.patch(4,-3,-2.6,1.5,1);S.patch(4,3.2,-2.4,1.4,1);
+    S.next();const lx=S.j(1.2),lz=1+S.j(.6);S.patch(3,lx,lz,2.3,.9);S.line(3,S.wander([[S.j(1),-5.8],[lx,lz-1.5]],.9),.45);
+    S.next();S.blob(7,lx+S.j(.5),lz+2,.7,.6);S.line(5,S.wander([[S.j(2),8.2],[lx,lz+2.4]],1),.34);
+    S.stamp('tent',lx-.8,lz+2.6);S.stamp('campfire',lx-.2,lz+2.8)}},
+  {k:'oasis',name:'Desert oasis',e:'🌵',make(S){S.fill(7,1.2);
+    S.next();for(let i=0;i<4;i++)S.patch(4,S.j(12),S.j(12),1+R()*.8,1);S.patch(8,6+S.j(.6),-6+S.j(.6),1.7,1.1);
+    S.next();const ox=S.j(2.5),oz=S.j(2.5);S.patch(2,ox,oz,1.9,.7);S.patch(6,ox+.6,oz-1.1,.7,.5);
+    S.next();S.patch(3,ox,oz,1.15,.7);S.blob(9,ox+1.9,oz+1.3,.8,.55);
+    S.line(5,S.wander([[-8.3,S.j(6)],[ox-1.5,oz],[ox+1.9,oz+1.3],[8.3,S.j(6)]],1.1),.36);
+    S.stamp('tent',ox-2.4,oz+2);S.stamp('campfire',ox-1.8,oz+2.4);S.stamp('tent',ox+3.4,oz-2.6)}},
+  {k:'coast',name:'Seaside',e:'🌊',make(S){S.patch(2,0,2.5,6.5,1.1);S.patch(1,-4.5,5,2.2);S.patch(1,4.2,5.4,2);S.patch(4,5.8,1.5,1.6,1);S.patch(6,-2,1.2,1,.6);
+    S.next();S.line(7,S.wander([[-9,-3.9],[0,-3.6],[9,-3.9]],.9),1.25);
+    S.next();S.line(3,S.wander([[-9,-6.1],[0,-5.8],[9,-6.1]],1),2.2);S.line(3,[[-9,-8],[9,-8]],2);
+    const rx=S.j(3);S.line(3,S.wander([[rx,8.2],[rx+S.j(2),0],[rx+S.j(1),-5]],.9),.45);
+    S.next();const vx=rx+2.6;S.blob(9,vx,-2.2,1,.6);S.line(5,S.wander([[vx,-2.2],[vx-3,2],[-7,5.5]],.8),.36);
+    S.stamp('lighthouse',vx+3.2,-4.3);S.stamp('windmill',vx-4.4,1.4);S.stamp('tent',-6,-2.5);S.stamp('campfire',-5.4,-2.2)}},
+  {k:'farm',name:'Farmland',e:'🌾',make(S){S.fill(2,1.1);for(let i=0;i<5;i++)S.patch(6,S.j(13),S.j(13),.8+R()*.6,.6);
+    S.patch(1,-6,-6,1.8);S.patch(1,6.2,6,1.6);S.patch(1,6,-5.5,1.2);S.patch(4,-6,4.8,1.5,1);
+    S.next();S.line(3,S.wander([[-9,-2+S.j(2)],[0,S.j(1)],[9,1.5+S.j(2)]],1.2),.5);
+    S.next();S.line(5,S.wander([[S.j(1),-8.3],[0,0],[S.j(1),8.3]],.7),.36);S.line(5,S.wander([[-8.3,S.j(1)],[0,0],[8.3,S.j(1)]],.7),.36);
+    S.blob(9,.9,.9,1.1,.6);S.blob(9,-4.5,4.8,.7,.55);S.blob(9,4.8,-4.4,.7,.55);
+    S.stamp('windmill',-3.6,-3.2);S.stamp('windmill',3.4,3.6);S.stamp('windmill',-5.6,1.6);S.stamp('campfire',2.6,-1.8)}},
+  {k:'forest',name:'Enchanted forest',e:'🌲',make(S){S.fill(1,1.1);
+    S.next();const gl=[[S.j(3)-3,S.j(3)-2,1.8],[S.j(3)+3,S.j(3)+2.5,1.5],[S.j(3)+2,S.j(3)-4,1.3],[S.j(2)-4,S.j(2)+4.5,1.2]];
+    gl.forEach(([x,z,r])=>S.patch(2,x,z,r,.8));S.next();gl.forEach(([x,z,r])=>S.patch(6,x,z,r*.45,.55));
+    S.line(3,S.wander([[-9,S.j(8)],[gl[0][0],gl[0][1]+2],[9,S.j(8)]],1.4),.42);S.blob(3,gl[1][0]+1.6,gl[1][1]-1.6,.8,.6);
+    S.next();S.line(5,S.wander(gl.map(g=>[g[0],g[1]]),.9),.32);
+    S.stamp('campfire',gl[0][0],gl[0][1]);S.stamp('tent',gl[0][0]-.7,gl[0][1]+.5);S.stamp('campfire',gl[2][0],gl[2][1])}},
+  {k:'peaks',name:'Snowy peaks',e:'❄️',season:'winter',make(S){S.patch(4,0,2,6.5,1.1);S.patch(1,-5,4,2.4);S.patch(1,4.5,5,2.2);S.patch(1,-1,-1.5,2);
+    S.next();[[-4.5,-4.5,3],[1.5,-5.6,2.8],[5.8,-2.5,2.4]].forEach(([x,z,r])=>S.patch(8,x+S.j(.6),z+S.j(.6),r,1.2));
+    S.next();const lx=S.j(2),lz=3.4+S.j(.8);S.patch(3,lx,lz,1.8,.8);S.line(3,S.wander([[1.5,-3.8],[lx,lz-1.4]],.8),.4);
+    S.next();S.blob(9,lx+2.8,lz+1.8,.8,.55);S.line(5,S.wander([[-8.3,6.5],[lx-2,lz+1],[lx+2.8,lz+1.8]],.8),.34);
+    S.stamp('campfire',lx-2.4,lz-.4);S.stamp('tent',lx-3,lz+.2);S.stamp('windmill',lx+4.6,lz+.2)}}];
+let lastSurprise=-1,surpriseSeason=false,surpriseN=0;
+function surprise(k){closePops();pushUndo();queue=[];shareHash=null;ictx.clearRect(0,0,TS,TS);for(let t=1;t<=NT;t++)dens[t].fill(0);stamps=[];dirty=true;
+  srand((Date.now()%1e9)+(++surpriseN)*7919);
+  let idx=SURPRISES.findIndex(s=>s.k===k);if(idx<0){idx=R()*(SURPRISES.length-(lastSurprise<0?0:1))|0;if(lastSurprise>=0&&idx>=lastSurprise)idx++}lastSurprise=idx;
+  const th=SURPRISES[idx],layers=[[]],st=[];let L=layers[0];
+  const S={j:w=>(R()-.5)*w,next(){L=[];layers.push(L)},
+    blob(t,x,z,rad,r=.8,sq=.8){for(let k=0;k<rad*rad*9;k++){const a=R()*6.28,d=Math.sqrt(R())*rad;L.push([t,x+Math.cos(a)*d,z+Math.sin(a)*d*sq,r])}},
+    // an irregular patch: a core plus a few offset lobes, so no two forests or lakes share an outline
+    patch(t,x,z,rad,r=.8){const n=3+(R()*3|0);S.blob(t,x,z,rad*.6,r);for(let i=1;i<n;i++){const a=R()*6.28,d=rad*(.2+R()*.35);S.blob(t,x+Math.cos(a)*d,z+Math.sin(a)*d,rad*(.35+R()*.3),r,.7+R()*.5)}},
+    line(t,pts,r){for(let k=0;k<pts.length-1;k++){const [ax,az]=pts[k],[bx,bz]=pts[k+1],n=Math.ceil(Math.hypot(bx-ax,bz-az)/(r*.3));for(let s=0;s<n;s++)L.push([t,lerp(ax,bx,s/n)+(R()-.5)*.15,lerp(az,bz,s/n)+(R()-.5)*.15,r])}},
+    // bend a polyline with sideways jitter every ~1.3 units, for rivers, roads and shores that meander
+    wander(pts,wig=.8){const out=[pts[0]];for(let i=1;i<pts.length;i++){const [ax,az]=pts[i-1],[bx,bz]=pts[i],l=Math.hypot(bx-ax,bz-az)||1,n=Math.max(1,Math.round(l/1.3));
+      for(let s=1;s<=n;s++){const t=s/n,o=s<n?(R()-.5)*wig:0;out.push([lerp(ax,bx,t)-(bz-az)/l*o,lerp(az,bz,t)+(bx-ax)/l*o])}}return out},
+    // wash the whole sheet, stopping at a ragged margin like a real watercolour
+    fill(t,r=1.1){for(let x=-7.4;x<=7.4;x+=r*.7)for(let z=-7.4;z<=7.4;z+=r*.7)L.push([t,x+(R()-.5)*r*.8,z+(R()-.5)*r*.8,r])},
+    stamp(k,x,z){st.push([k,x,z])}};
+  th.make(S);
+  const rot=R()*4|0,flip=R()<.5,T=(x,z,m)=>{if(flip)x=-x;for(let i=0;i<rot;i++)[x,z]=[-z,x];return [clamp(x,-m,m),clamp(z,-m,m)]};
+  const strokes=layers.flatMap(l=>l.sort(()=>R()-.5)).filter(s=>Math.abs(s[1])<9.5&&Math.abs(s[2])<9.5).map(([t,x,z,r])=>[t,...T(x,z,HW),r]);
+  queue=strokes.concat(st.map(([k,x,z])=>['s',k,...T(x,z,HW-.7)]));
+  if(th.season){setSeason(th.season);surpriseSeason=true}else if(surpriseSeason){setSeason('summer');surpriseSeason=false}
+  toast(`${th.e} ${th.name}`);
+}
+$('#surprise').onclick=()=>surprise();
+(function surpriseMenu(){const P=$('#surprisePop');
+  const item=(e,name,fn)=>{const b=document.createElement('button');b.setAttribute('role','menuitem');const i=document.createElement('span');i.className='em';i.textContent=e;b.append(i,name);b.onclick=fn;P.append(b)};
+  item('🎲','Anything',()=>surprise());SURPRISES.forEach(t=>item(t.e,t.name,()=>surprise(t.k)));
+  $('#surpriseMenu').onclick=e=>{e.stopPropagation();const open=P.classList.contains('hidden');closePops(open?'#surprisePop':null);
+    if(open){const tr=$('#tray'),side=traySide();const rr=tr.getBoundingClientRect();P.style.left=side?side+'px':'';P.style.right=side?'auto':Math.max(12,innerWidth-rr.right)+'px';
+      P.style.bottom=side?'calc(env(safe-area-inset-bottom,0px) + 12px)':`calc(env(safe-area-inset-bottom,0px) + ${tr.offsetHeight+20}px)`}
+    P.classList.toggle('hidden',!open);$('#surpriseMenu').setAttribute('aria-expanded',open)}})();
 
 /* ================= camera rig ================= */
 let mode='draw';
@@ -626,14 +698,16 @@ function grow(){
   const T=W.trees,Tu=[],Fl=[],Ro=[],Ho=W.houses,La=W.lanterns;
   const cells={graze:[],meadow:[],flower:[],deep:[],glowy:[]};W.cells=cells;
   const far=(arr,x,z,d)=>arr.every(o=>Math.hypot(o.x-x,o.z-z)>d);
+  // past a cap, reservoir-sample so a paper covered edge to edge thins out evenly instead of losing its bottom rows
+  const keep=(arr,cap,o)=>{arr.seen=(arr.seen||0)+1;if(arr.length<cap)arr.push(o);else{const j=R()*arr.seen|0;if(j<cap)arr[j]=o}};
   for(let gz=0;gz<G;gz++)for(let gx=0;gx<G;gx++){const i=gz*G+gx,t=type[i],cx=-HW+(gx+.5)*CELL,cz=-HW+(gz+.5)*CELL,ch=cellH[i];
     const J=(k=1.1)=>[cx+(R()-.5)*CELL*k,cz+(R()-.5)*CELL*k];
-    const tree=(kind,s)=>{if(T.length>2800)return;const [x,z]=J();if(stamps.some(o=>Math.hypot(o.x-x,o.z-z)<(o.k==='campfire'?.45:.32)))return;T.push({x,z,y:hRaw(x,z)-.01,s,kind,rot:R()*6.28,lx:(R()-.5)*(kind===2?.35:.08),lz:(R()-.5)*(kind===2?.35:.08),delay:1.7+R()*2.1,
+    const tree=(kind,s)=>{const [x,z]=J();if(stamps.some(o=>Math.hypot(o.x-x,o.z-z)<(o.k==='campfire'?.45:.32)))return;keep(T,2801,{x,z,y:hRaw(x,z)-.01,s,kind,rot:R()*6.28,lx:(R()-.5)*(kind===2?.35:.08),lz:(R()-.5)*(kind===2?.35:.08),delay:1.7+R()*2.1,
       c:kind===1?colJ(pick(['#2e4a2a','#35552f','#2b4026','#3f5e33'])):kind===0?colJ(pick(['#4d6e30','#5c7c36','#42632f','#6f833b','#7a8a3a'])):kind===2?colJ('#4f7a32'):colJ('#5d8a4a'),
       pc:kind===2?new THREE.Color('#a8865c'):colJ('#5a4130',.02,.1,.1)})};
-    const tuft=(col,s=1)=>{if(Tu.length>8000)return;const [x,z]=J();Tu.push({x,z,y:hRaw(x,z),s:s*(.7+R()*.6),rot:R()*6.28,c:colJ(col,.04,.15,.1),delay:1.1+R()*1.6})};
-    const flower=(col)=>{if(Fl.length>2600)return;const [x,z]=J();Fl.push({x,z,y:hRaw(x,z),s:.8+R()*.5,rot:0,c:new THREE.Color(col),delay:1.6+R()*1.8})};
-    const rock=(col,s)=>{if(Ro.length>700)return;const [x,z]=J();Ro.push({x,z,y:hRaw(x,z),s,rot:R()*6,c:colJ(col,.02,.05,.12),delay:1.3+R()})};
+    const tuft=(col,s=1)=>{const [x,z]=J();keep(Tu,8001,{x,z,y:hRaw(x,z),s:s*(.7+R()*.6),rot:R()*6.28,c:colJ(col,.04,.15,.1),delay:1.1+R()*1.6})};
+    const flower=(col)=>{const [x,z]=J();keep(Fl,2601,{x,z,y:hRaw(x,z),s:.8+R()*.5,rot:0,c:new THREE.Color(col),delay:1.6+R()*1.8})};
+    const rock=(col,s)=>{const [x,z]=J();keep(Ro,701,{x,z,y:hRaw(x,z),s,rot:R()*6,c:colJ(col,.02,.05,.12),delay:1.3+R()})};
     if(t===1){if(R()<.62){const k=ch>1.3?1:(W.WB[i]>.12&&R()<.6)?0:(R()<.72?1:0);tree(k,.55+.5*B[1][i]+R()*.25)}if(R()<.5)tuft('#3d5a2a');if(R()<.1)cells.glowy.push([cx,cz])}
     else if(t===2){tuft('#7e9a3e');tuft('#8aa446');if(R()<.25)flower(pick(PETALS));if(R()<.012)tree(0,1.1+R()*.4);cells.meadow.push([cx,cz]);cells.graze.push([cx,cz]);if(R()<.08)cells.glowy.push([cx,cz])}
     else if(t===6){tuft('#789a3c');const pi=vnoise(cx*.7,cz*.7)*PETALS.length|0;for(let k=0;k<3;k++)flower(R()<.8?PETALS[pi]:pick(PETALS));cells.flower.push([cx,cz]);cells.graze.push([cx,cz])}
@@ -1367,7 +1441,7 @@ function checkJournal(dt){if(mode!=='walk'||!W)return;jT+=dt;if(jT<.35)return;jT
   if(s.y>2.3)discover('peak');if(s.swim)discover('swim');if(W.bridge&&W.bridge[cellOf(s.x,s.z)])discover('bridge');if(season==='winter'&&waterAt(s.x,s.z)>.5)discover('ice')}
 
 /* ================= menus: more, journal, wanderer ================= */
-function closePops(except){['#morepop','#skypop','#lookpop'].forEach(q=>{if(q!==except)$(q).classList.add('hidden')});$('#tSky').setAttribute('aria-pressed',except==='#skypop')}
+function closePops(except){if(except!=='#surprisePop')$('#surpriseMenu').setAttribute('aria-expanded',false);['#morepop','#skypop','#lookpop','#surprisePop'].forEach(q=>{if(q!==except)$(q).classList.add('hidden')});$('#tSky').setAttribute('aria-pressed',except==='#skypop')}
 $('#tMore').onclick=e=>{e.stopPropagation();const p=$('#morepop'),open=p.classList.contains('hidden');closePops(open?'#morepop':null);p.classList.toggle('hidden',!open);$('#mRecL').textContent=rec?'Stop recording':'Record a video'};
 $('#mPhoto').onclick=()=>{closePops();photoReq=true};
 $('#mRec').onclick=()=>{closePops();$('#tRec').onclick()};
@@ -1582,6 +1656,9 @@ function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta()
   if(rec){const s=(performance.now()-recT0)/1000|0;$('#recTime').textContent=`${s/60|0}:${String(s%60).padStart(2,'0')}`}
   // shadows move slowly: refresh them every other frame (rarely on the still paper)
   renderer.shadowMap.needsUpdate=++shTick%(mode==='draw'&&!tween&&!W?8:2)===0||photoReq||!!rec;
+  // near plane follows the viewing distance: from far away a fixed 0.01 leaves too little depth precision and the
+  // paper z-fights with the sheet beneath it (stripes on narrow screens)
+  const nearW=mode==='walk'?.01:clamp(camera.position.distanceTo(lastLook)*.02,.01,1.5);if(Math.abs(nearW-camera.near)>camera.near*.05){camera.near=nearW;camera.updateProjectionMatrix()}
   // a point light costs every lit pixel, even at zero intensity: only keep the ones that are glowing
   campLight.visible=campLight.intensity>.02;heroLight.visible=heroLight.intensity>.02;
   warmStep();renderer.render(scene,camera);adaptRes(dt);
