@@ -1623,7 +1623,8 @@ if(standalone)setTimeout(openSharedFromHash,600);
 addEventListener('hashchange',()=>{if(standalone&&mode==='draw')openSharedFromHash()});
 
 /* ================= loop ================= */
-const clock=new THREE.Clock(),tmpV2=new THREE.Vector2();let lastInput={f:0,s:0},shTick=0;
+const clock=new THREE.Clock(),tmpV2=new THREE.Vector2();let lastInput={f:0,s:0},shTick=0,lastAct=performance.now(),calmN=0;
+['pointerdown','pointermove','keydown','wheel','touchstart'].forEach(ev=>addEventListener(ev,()=>{lastAct=performance.now()},{passive:true,capture:true}));
 /* front-to-back instance order: in a dense forest most canopy pixels are hidden, and drawing near trees first lets the
    depth test reject them before shading (about +30% walking through a full-sheet forest). Re-sorted as the camera moves. */
 const sortAt=new THREE.Vector3(1e9,0,0);let sortT=0;
@@ -1675,7 +1676,9 @@ function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta()
   const nearW=mode==='walk'?.01:clamp(camera.position.distanceTo(lastLook)*.02,.01,1.5);if(Math.abs(nearW-camera.near)>camera.near*.05){camera.near=nearW;camera.updateProjectionMatrix()}
   // a point light costs every lit pixel, even at zero intensity: only keep the ones that are glowing
   campLight.visible=campLight.intensity>.02;heroLight.visible=heroLight.intensity>.02;
-  maybeSort(dt);warmStep();renderer.render(scene,camera);adaptRes(dt);
+  // calm paper: after a few seconds without input only the dust motes drift, so draw every other frame and save battery
+  const calm=mode==='draw'&&!queue.length&&!tween&&!warmNow&&!warmQ.length&&!dirty&&!rec&&performance.now()-lastAct>3000;
+  maybeSort(dt);warmStep();if(!calm||(++calmN&1))renderer.render(scene,camera);adaptRes(dt);
   if(photoReq){photoReq=false;takePhoto()}
   if(thumbCb){const cb=thumbCb;thumbCb=null;cb(makeThumb())}
   if(DEBUG)debugTick(dt)}
