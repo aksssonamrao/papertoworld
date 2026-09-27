@@ -756,6 +756,11 @@ function grow(){
     if(b.glowY!==undefined){b.glow=gi;addGlow(st.x,y+b.glowY,st.z,b.glowS,1,.7,.35)}});
   glows.geometry.setDrawRange(0,gi);gp.position.needsUpdate=gp.color.needsUpdate=gp.size.needsUpdate=gp.alpha.needsUpdate=true;glows.userData.n=gi;
   spawnFauna();
+  // skinned animals need their own shaders, which Direct3D can take seconds to compile: build them off the main thread
+  // (KHR_parallel_shader_compile) and let the animals appear once that is done
+  W.faunaAt=Infinity;{const wref=W,hid=fauna.all.filter(a=>!a.g.visible);hid.forEach(a=>a.g.visible=true);
+    const p=renderer.compileAsync?renderer.compileAsync(scene,camera):Promise.resolve();hid.forEach(a=>a.g.visible=false);
+    p.then(()=>{wref.faunaAt=Math.max(4.6,growT)},()=>{wref.faunaAt=Math.max(4.6,growT)})}
   if(season!=='summer')applySeason(true);
   // go
   terrain.castShadow=true;terrain.receiveShadow=true;
@@ -784,7 +789,6 @@ function updateGrowth(dt){
   if(busy(E.la)){posts.instanceMatrix.needsUpdate=heads.instanceMatrix.needsUpdate=true;W.lanterns.forEach((o,i)=>{const g=clamp((T-o.delay)/.6),s=Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s,s);dummy.updateMatrix();posts.setMatrixAt(i,dummy.matrix);heads.setMatrixAt(i,dummy.matrix)})}
   W.grass.forEach(([m,arr,dur,ys],gi)=>{if(!busy(E.gr[gi]))return;m.instanceMatrix.needsUpdate=true;arr.forEach((o,k)=>{const g=eBack(clamp((T-o.delay)/dur));dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);const s=Math.max(g*o.s,1e-4);dummy.scale.set(s,s*ys,s);dummy.updateMatrix();m.setMatrixAt(k,dummy.matrix)})});
   const gp=glows.geometry.attributes.position;W.houses.forEach(o=>{gp.setY(o.glow,(o.y+.08*o.s)*rise)});W.lanterns.forEach(o=>gp.setY(o.glow,o.y*rise+.18));W.props.forEach(b=>{if(b.glow!==undefined)gp.setY(b.glow,b.y*rise+b.glowY)});gp.needsUpdate=true;
-  fauna.all.forEach(a=>{a.g.visible=T>4.6;const s=a.base*eBack(clamp((T-4.6)/.6));a.g.scale.setScalar(Math.max(s,1e-4))});
   if(T>6.2){mode=mode==='growing'?'view':mode;showUI();
     // a surprise theme may bring its own light, unless you already picked one
     if(W.mood&&mode==='view'){if(sky.mode==='lamp')setSkyPreset(W.mood);W.mood=null}if(mode==='view')setHint(sky.mode==='lamp'?'Drag to turn the paper. Pinch to zoom. Try the sun button for night.':'Drag to turn the paper. Pinch to zoom. The sun button changes the light.')}
@@ -923,7 +927,8 @@ function spawnFauna(){const C=W.cells;
   smoke.geometry.setDrawRange(0,W.smoke.length);sp.color.needsUpdate=true;
 }
 function updateFauna(dt,et){
-  if(!W)return;const night=sky.night,hero=mode==='walk'?heroS:null;
+  if(!W)return;
+  const fa=W.faunaAt;if(growT<fa+.8)fauna.all.forEach(a=>{a.g.visible=growT>fa;const s=a.base*eBack(clamp((growT-fa)/.6));a.g.scale.setScalar(Math.max(s,1e-4))});const night=sky.night,hero=mode==='walk'?heroS:null;
   for(const o of fauna.all){if(!o.g.visible&&o.kind!=='fly'&&o.kind!=='bird')continue;
     const scare=hero&&Math.hypot(hero.x-o.x,hero.z-o.z)<(o.kind==='deer'?.55:.35);
     if(o.kind==='deer'||o.kind==='rabbit'||o.kind==='fox'){
