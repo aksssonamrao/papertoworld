@@ -736,7 +736,7 @@ function grow(){
   Ho.forEach(o=>addObst(o.x,o.z,.13*o.s));
   const posts=mk(geoPost,matDark,La),heads=mk(geoLampHead,matGlow,La,false,'none');La.forEach(o=>addObst(o.x,o.z,.02));
   W.grass=[[mk(geoTuft,matGrass,Tu,false),Tu,.6,1],[mk(geoFlower,matRock,Fl,false),Fl,.6,1],[mk(geoRock,matRock,Ro),Ro,.5,.6]];
-  W.inst={poles,walls,roofs,wins,posts,heads};
+  W.inst={poles,walls,roofs,wins,posts,heads,fol};W.byKind=byKind;
   // glows: windows + lanterns
   const gp=glows.geometry.attributes;let gi=0;
   const addGlow=(x,y,z,s,r,g,b)=>{if(gi>=600)return;gp.position.setXYZ(gi,x,y,z);gp.color.setXYZ(gi,r,g,b);gp.size.setX(gi,s);gp.alpha.setX(gi,1);gi++};
@@ -752,7 +752,7 @@ function grow(){
   if(season!=='summer')applySeason(true);
   // go
   terrain.castShadow=true;terrain.receiveShadow=true;
-  mode='growing';growT=0;rise=0;grownK=0;water.visible=true;
+  mode='growing';growT=0;rise=0;grownK=0;water.visible=true;sortAt.set(1e9,0,0);
   showUI();setHint('Growing…');
   if(!tween&&Math.abs(sph.phi-viewPose().phi)>.05)flyToSph(viewPose(),2.6);else if(!tween&&variant===0)flyToSph(viewPose(),2.6);
 }
@@ -1624,6 +1624,20 @@ addEventListener('hashchange',()=>{if(standalone&&mode==='draw')openSharedFromHa
 
 /* ================= loop ================= */
 const clock=new THREE.Clock(),tmpV2=new THREE.Vector2();let lastInput={f:0,s:0},shTick=0;
+/* front-to-back instance order: in a dense forest most canopy pixels are hidden, and drawing near trees first lets the
+   depth test reject them before shading (about +30% walking through a full-sheet forest). Re-sorted as the camera moves. */
+const sortAt=new THREE.Vector3(1e9,0,0);let sortT=0;
+let sortN=0;function sortInstances(){const c=camera.position;sortAt.copy(c);sortN++;
+  const perm=(mesh,list,setIdx)=>{const n=mesh.count;if(n<200)return;const a=mesh.instanceMatrix.array,d=new Float32Array(n);
+    for(let i=0;i<n;i++){const dx=a[i*16+12]-c.x,dy=a[i*16+13]-c.y,dz=a[i*16+14]-c.z;d[i]=dx*dx+dy*dy+dz*dz}
+    const idx=Array.from({length:n},(_,i)=>i).sort((p,q)=>d[p]-d[q]),na=a.slice(0,n*16);
+    for(let t=0;t<n;t++)a.set(na.subarray(idx[t]*16,idx[t]*16+16),t*16);mesh.instanceMatrix.needsUpdate=true;
+    const ic=mesh.instanceColor;if(ic){const ca=ic.array,nc=ca.slice(0,n*3);for(let t=0;t<n;t++)ca.set(nc.subarray(idx[t]*3,idx[t]*3+3),t*3);ic.needsUpdate=true}
+    const old=list.slice();for(let t=0;t<n;t++){list[t]=old[idx[t]];if(setIdx)setIdx(list[t],t)}};
+  perm(W.inst.poles,W.trees,(o,t)=>{o.pi=t});W.inst.fol.forEach((m,k)=>perm(m,W.byKind[k],(o,t)=>{o.fi=t}));
+  for(const [m,arr] of W.grass)perm(m,arr)}
+function maybeSort(dt){sortT+=dt;if((DEBUG&&window.__pw.noSort)||!W||!W.inst||growT<6.5||sortT<.4||!(mode==='walk'||mode==='view'||mode==='map'))return;
+  if(camera.position.distanceToSquared(sortAt)<(mode==='walk'?.6:2.5)**2)return;sortT=0;sortInstances()}
 /* adaptive resolution: drop the pixel ratio when frames run long, win it back when there is headroom */
 let prK=PR0,prFt=16.7,prN=0,prCool=0,prBack=6000;
 function adaptRes(dt){if(dt>.1||tween||mode==='growing'||document.hidden||warmNow||warmQ.length){prN=0;return}
@@ -1661,7 +1675,7 @@ function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta()
   const nearW=mode==='walk'?.01:clamp(camera.position.distanceTo(lastLook)*.02,.01,1.5);if(Math.abs(nearW-camera.near)>camera.near*.05){camera.near=nearW;camera.updateProjectionMatrix()}
   // a point light costs every lit pixel, even at zero intensity: only keep the ones that are glowing
   campLight.visible=campLight.intensity>.02;heroLight.visible=heroLight.intensity>.02;
-  warmStep();renderer.render(scene,camera);adaptRes(dt);
+  maybeSort(dt);warmStep();renderer.render(scene,camera);adaptRes(dt);
   if(photoReq){photoReq=false;takePhoto()}
   if(thumbCb){const cb=thumbCb;thumbCb=null;cb(makeThumb())}
   if(DEBUG)debugTick(dt)}
@@ -1669,7 +1683,7 @@ function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta()
 const DEBUG=QS.has('debug');let dbgEl=null,dbgN=0,dbgFt=16;
 function debugTick(dt){dbgFt=dbgFt*.95+dt*1e3*.05;if(++dbgN%15)return;if(!dbgEl){dbgEl=document.createElement('div');dbgEl.style.cssText='position:fixed;left:10px;top:calc(env(safe-area-inset-top,0px) + 58px);font:11px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.45);padding:6px 8px;border-radius:8px;z-index:9;pointer-events:none;white-space:pre';document.body.append(dbgEl)}
   const i=renderer.info,b=renderer.getDrawingBufferSize(tmpV2);dbgEl.textContent=`${(1e3/dbgFt).toFixed(0)} fps · ${b.x}×${b.y} · px ${renderer.getPixelRatio().toFixed(2)}\n${i.render.calls} calls · ${(i.render.triangles/1e3).toFixed(0)}k tris · ${i.programs.length} programs · ${mode}`}
-if(DEBUG)window.__pw={renderer,scene,camera,sph,heroS,get W(){return W},get mode(){return mode},get warmLeft(){return warmQ.length}};
+if(DEBUG)window.__pw={renderer,scene,camera,sph,heroS,get W(){return W},get mode(){return mode},get warmLeft(){return warmQ.length},get sortN(){return sortN},noSort:false};
 /* shader warm-up: compiling a shader can stall the GPU for hundreds of ms on integrated graphics. Every material the
    grown world uses is drawn once, hidden under the desk, a few at a time while the paper sits idle, so Grow never freezes. */
 const warmQ=[];let warmNow=null;
