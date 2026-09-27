@@ -1777,7 +1777,7 @@ function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta()
 const DEBUG=QS.has('debug');let dbgEl=null,dbgN=0,dbgFt=16;
 function debugTick(dt){dbgFt=dbgFt*.95+dt*1e3*.05;if(++dbgN%15)return;if(!dbgEl){dbgEl=document.createElement('div');dbgEl.style.cssText='position:fixed;left:10px;top:calc(env(safe-area-inset-top,0px) + 58px);font:11px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.45);padding:6px 8px;border-radius:8px;z-index:9;pointer-events:none;white-space:pre';document.body.append(dbgEl)}
   const i=renderer.info,b=renderer.getDrawingBufferSize(tmpV2);dbgEl.textContent=`${(1e3/dbgFt).toFixed(0)} fps · ${b.x}×${b.y} · px ${renderer.getPixelRatio().toFixed(2)}\n${i.render.calls} calls · ${(i.render.triangles/1e3).toFixed(0)}k tris · ${i.programs.length} programs · ${mode}`}
-if(DEBUG)window.__pw={renderer,scene,camera,sph,heroS,get W(){return W},get mode(){return mode},get warmLeft(){return warmQ.length},get sortN(){return sortN},noSort:false};
+if(DEBUG)window.__pw={renderer,scene,camera,sph,heroS,fauna,get W(){return W},get mode(){return mode},get warmLeft(){return warmQ.length},get sortN(){return sortN},noSort:false};
 /* shader warm-up: compiling a shader can stall the GPU for hundreds of ms on integrated graphics. Every material the
    grown world uses is drawn once, hidden under the desk, a few at a time while the paper sits idle, so Grow never freezes. */
 const warmQ=[];let warmNow=null;
