@@ -276,13 +276,18 @@ const mobile=Math.min(innerWidth,innerHeight)<700;
 /* ================= renderer & scene ================= */
 const canvas=$('#c');
 let renderer;try{renderer=new THREE.WebGLRenderer({canvas,antialias:true})}catch(err){document.getElementById('nogl').classList.remove('hidden');throw err}
-renderer.setPixelRatio(Math.min(devicePixelRatio,mobile?1.75:2));
+const QS=new URLSearchParams(location.search),FIXPR=parseFloat(QS.get('pr'));
+const PR0=FIXPR>0?Math.min(FIXPR,3):Math.min(devicePixelRatio,mobile?1.75:2),PRMIN=FIXPR>0?PR0:Math.min(PR0,Math.max(.6,PR0*.5));
+renderer.setPixelRatio(PR0);
 renderer.outputEncoding=THREE.sRGBEncoding;
 renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=.95;
-renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+// PCF with a wider radius looks as soft as PCFSoft here but costs about a third less per pixel
+renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFShadowMap; renderer.shadowMap.autoUpdate=false;
 const scene=new THREE.Scene();
 const DESK_BG=new THREE.Color('#140d09');
 scene.background=DESK_BG.clone();
+// fog stays on (density 0 off the paper) so entering walk mode never forces every shader to recompile
+scene.fog=new THREE.FogExp2(DESK_BG.clone(),0);
 const camera=new THREE.PerspectiveCamera(38,1,0.01,200);
 
 const hemi=new THREE.HemisphereLight('#ffe6c4','#2a1a10',0.55); scene.add(hemi);
@@ -290,7 +295,7 @@ const sun=new THREE.DirectionalLight('#ffd3a0',1.7);
 sun.position.set(-7,12,-6); sun.castShadow=true;
 const sz=mobile?1024:2048; sun.shadow.mapSize.set(sz,sz);
 Object.assign(sun.shadow.camera,{left:-11,right:11,top:11,bottom:-11,near:1,far:45});
-sun.shadow.bias=-0.0025; sun.shadow.normalBias=0.05; scene.add(sun);
+sun.shadow.bias=-0.0025; sun.shadow.normalBias=0.05; sun.shadow.radius=2; scene.add(sun);
 const fill=new THREE.DirectionalLight('#9fb4d0',0.28); fill.position.set(8,5,9); scene.add(fill);
 
 function mkCanvas(w,h=w){const c=document.createElement('canvas');c.width=w;c.height=h;return c}
@@ -340,6 +345,32 @@ function sampleField(f,x,z){const fx=clamp((x+HW)/CELL-.5,0,G-1.001),fz=clamp((z
 const waterC=mkCanvas(G), wctx=waterC.getContext('2d'); const waterTex=new THREE.CanvasTexture(waterC);
 const water=new THREE.Mesh(new THREE.PlaneGeometry(PW,PW),new THREE.MeshStandardMaterial({color:'#2d5a73',transparent:true,opacity:0,alphaMap:waterTex,roughness:.12,metalness:.25,depthWrite:false}));
 water.rotation.x=-Math.PI/2; water.renderOrder=2; scene.add(water); water.visible=false;
+/* water surface (after Clearwater): wind ripples bend the normal so the sun glints, Fresnel mixes in the sky at grazing
+   angles and lets you see the bed when looking down, and a soft foam line rides the shore */
+const waterU={uTime:{value:0},uSky:{value:new THREE.Color()},uIce:{value:0},uSunDir:{value:new THREE.Vector3(0,1,0)},uSunK:{value:1}};
+water.material.onBeforeCompile=sh=>{Object.assign(sh.uniforms,waterU);
+  sh.vertexShader='varying vec3 vWPos;\n'+sh.vertexShader.replace('#include <begin_vertex>','#include <begin_vertex>\nvWPos=(modelMatrix*vec4(transformed,1.)).xyz;');
+  sh.fragmentShader='uniform float uTime;\nuniform vec3 uSky;\nuniform float uIce;\nuniform vec3 uSunDir;\nuniform float uSunK;\nvarying vec3 vWPos;\n'+sh.fragmentShader
+    .replace('#include <normal_fragment_begin>',`#include <normal_fragment_begin>
+vec2 wp=vWPos.xz,g=vec2(0.);
+g+=.050*cos(dot(wp,vec2(11.,4.))+uTime*1.9)*vec2(.94,.34);
+g+=.040*cos(dot(wp,vec2(-6.,15.))+uTime*2.3)*vec2(-.37,.93);
+g+=.028*cos(dot(wp,vec2(27.,-19.))+uTime*3.4)*vec2(.82,-.58);
+g+=.020*cos(dot(wp,vec2(-41.,-33.))+uTime*4.1)*vec2(-.78,-.63);
+g*=1.-uIce*.85;
+vec3 nW=normalize(vec3(-g.x,1.,-g.y));
+normal=normalize((viewMatrix*vec4(nW,0.)).xyz);`)
+    .replace('gl_FragColor = vec4( outgoingLight, diffuseColor.a );',`vec3 Vw=normalize(cameraPosition-vWPos),Rw=reflect(-Vw,nW);
+float fr=.02+.98*pow(1.-clamp(dot(nW,Vw),0.,1.),5.);
+float am=texture2D(alphaMap,vUv).g;
+float foam=smoothstep(.1,.3,am)*(1.-smoothstep(.3,.62,am))*(.55+.45*sin(uTime*1.3+vWPos.x*9.+vWPos.z*7.))*(1.-uIce);
+// wave facets catch the light, the sky brightens toward the zenith, and the sun leaves a hard glint
+outgoingLight*=1.+(dot(nW,uSunDir)-uSunDir.y)*2.2*uSunK;
+outgoingLight=mix(outgoingLight,uSky*(.7+.6*clamp(Rw.y,0.,1.)),fr*.8);
+outgoingLight+=vec3(1.,.93,.8)*pow(max(dot(Rw,uSunDir),0.),420.)*uSunK*2.5*(1.-uIce*.7);
+outgoingLight+=vec3(.92,.95,1.)*foam*.22*(.25+.75*dot(uSky,vec3(.33)));
+gl_FragColor=vec4(outgoingLight,clamp(diffuseColor.a*mix(.78,1.2,fr)+foam*.25*diffuseColor.a,0.,1.));`)};
+water.material.customProgramCacheKey=()=>'pw-water';
 
 /* ================= point sprites (glows, fireflies, smoke) ================= */
 function mkPoints(n,additive){
@@ -384,13 +415,17 @@ let ripI=0;function ripple(x,z,s=.08){const m=ripples[ripI++%ripples.length];m.p
 function merge(gs){let n=0;gs.forEach(g=>n+=g.attributes.position.count);const p=new Float32Array(n*3);let o=0;
   gs.forEach(g=>{p.set(g.attributes.position.array,o*3);o+=g.attributes.position.count});const out=new THREE.BufferGeometry();out.setAttribute('position',new THREE.BufferAttribute(p,3));out.computeVertexNormals();return out}
 const ni=g=>g.index?g.toNonIndexed():g;
-function lumpy(r,x,y,z){const g=ni(new THREE.IcosahedronGeometry(1,1)),p=g.attributes.position.array;
+function lumpy(r,x,y,z,detail=1){const g=ni(new THREE.IcosahedronGeometry(1,detail)),p=g.attributes.position.array;
   for(let i=0;i<p.length;i+=3){const k=1+(hash(Math.round(p[i]*50)+x*9,Math.round(p[i+1]*50)*3+Math.round(p[i+2]*50)*7)-.5)*.35;p[i]*=k*r;p[i+1]*=k*r*.9;p[i+2]*=k*r}
   g.translate(x,y,z);return g}
 function tri(pts){const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(pts.flat()),3));return g}
 const geoPole=merge([ni(new THREE.CylinderGeometry(.02,.034,1,7)).translate(0,.5,0),ni(new THREE.CylinderGeometry(.034,.05,.08,7)).translate(0,.04,0)]);
 const geoCon=merge([ni(new THREE.ConeGeometry(.25,.4,7)).translate(0,.44,0),ni(new THREE.ConeGeometry(.2,.34,7)).translate(0,.64,0),ni(new THREE.ConeGeometry(.13,.28,7)).translate(0,.85,0)]);
 const geoDec=merge([lumpy(.2,0,.66,0),lumpy(.16,.11,.57,.05),lumpy(.15,-.1,.59,-.06),lumpy(.13,0,.81,.02)]);
+// low-poly stand-ins that only draw into the shadow map: a quarter of the triangles, same silhouette under PCF
+const geoPoleSh=ni(new THREE.CylinderGeometry(.024,.042,1,4,1,true)).translate(0,.5,0);
+const geoConSh=merge([ni(new THREE.ConeGeometry(.25,.4,5,1,true)).translate(0,.44,0),ni(new THREE.ConeGeometry(.2,.34,5,1,true)).translate(0,.64,0),ni(new THREE.ConeGeometry(.13,.28,5,1,true)).translate(0,.85,0)]);
+const geoDecSh=merge([lumpy(.2,0,.66,0,0),lumpy(.16,.11,.57,.05,0),lumpy(.15,-.1,.59,-.06,0),lumpy(.13,0,.81,.02,0)]);
 const geoPalm=(()=>{const a=[];for(let k=0;k<7;k++){const f=ni(new THREE.BoxGeometry(.3,.008,.055));f.translate(.15,0,0);f.rotateZ(-.45-(k%2)*.2);f.rotateY(k/7*6.283);f.translate(0,.86,0);a.push(f)}
   a.push(ni(new THREE.IcosahedronGeometry(.03,0)).translate(.02,.84,0),ni(new THREE.IcosahedronGeometry(.028,0)).translate(-.02,.83,.02));return merge(a)})();
 const geoCactus=merge([ni(new THREE.CylinderGeometry(.035,.042,.34,7)).translate(0,.17,0),ni(new THREE.SphereGeometry(.035,7,4,0,6.283,0,1.6)).translate(0,.34,0),
@@ -597,6 +632,11 @@ function grow(){
   const FOLG=[geoDec,geoCon,geoPalm,geoCactus],TALL=[.64,.97,.85,0];
   const byKind=[[],[],[],[]];T.forEach(o=>{o.fi=byKind[o.kind].length;byKind[o.kind].push(o)});
   const poles=mk(geoPole,matPole,T,true,'pc');const fol=byKind.map((a,k)=>mk(FOLG[k],matFol,a));
+  const shadowProxy=(src,geo)=>{const p=new THREE.InstancedMesh(geo,src.material,Math.max(1,src.count));p.count=src.count;p.instanceMatrix=src.instanceMatrix;p.instanceColor=src.instanceColor;
+    p.frustumCulled=false;p.castShadow=true;src.castShadow=false;src.userData.proxy=p;scene.add(p);instances.push(p);
+    // onBeforeRender only runs in the camera pass (the shadow pass draws directly), so an empty draw range hides it there
+    p.onBeforeRender=()=>{geo.drawRange.count=0};p.onAfterRender=()=>{geo.drawRange.count=Infinity}};
+  shadowProxy(poles,geoPoleSh);shadowProxy(fol[0],geoDecSh);shadowProxy(fol[1],geoConSh);
   T.forEach((o,k)=>{o.pi=k;o.fm=fol[o.kind];o.tall=TALL[o.kind];addObst(o.x,o.z,.02+o.s*.02)});
   const walls=mk(geoWalls,matRock,Ho),roofs=mk(geoRoof,matRoof,Ho,true,'rc'),wins=mk(geoWin,matGlow,Ho,false,'none');
   Ho.forEach(o=>addObst(o.x,o.z,.13*o.s));
@@ -629,16 +669,19 @@ function updateGrowth(dt){
   const r=eIO(clamp((T-.6)/1.9));if(r!==rise){rise=r;applyHeights()}
   water.position.y=WATER_Y*rise;water.material.opacity=waterOp()*k;
   const {poles,walls,roofs,wins,posts,heads}=W.inst;
-  for(const o of W.trees){const g=clamp((T-o.delay)/1.25),tg=eOut(clamp(g/.45)),fg=clamp((g-.28)/.72),yy=o.y*rise;
+  // only re-upload instance buffers that are still growing (everything also rides the land rise until 2.5 s)
+  const endOf=(arr,dur)=>arr.reduce((m,o)=>Math.max(m,o.delay+dur),2.5),busy=end=>T-dt<=end;
+  if(!W.ends)W.ends={tr:endOf(W.trees,1.25),ho:endOf(W.houses,.9),la:endOf(W.lanterns,.6),gr:W.grass.map(([,arr,dur])=>endOf(arr,dur))};
+  const E=W.ends;
+  if(busy(E.tr)){poles.instanceMatrix.needsUpdate=true;for(const o of W.trees){const g=clamp((T-o.delay)/1.25),tg=eOut(clamp(g/.45)),fg=clamp((g-.28)/.72),yy=o.y*rise;
     if(fg>0&&!o.pl){o.pl=1;if(T-lastPluck>.07){lastPluck=T;pluckAt(o.x)}}
     dummy.position.set(o.x,yy,o.z);dummy.rotation.set(o.lx,o.rot,o.lz);
     const ts=o.tall?o.s*o.tall*Math.max(tg,1e-4):1e-4;dummy.scale.set(o.s*(.5+.5*tg),ts,o.s*(.5+.5*tg));dummy.updateMatrix();poles.setMatrixAt(o.pi,dummy.matrix);
-    const fs=fg>0?o.s*eBack(fg):1e-4;dummy.scale.set(fs,fs,fs);dummy.updateMatrix();o.fm.setMatrixAt(o.fi,dummy.matrix)}
-  W.houses.forEach((o,i)=>{const g=clamp((T-o.delay)/.9),s=.2*o.s*Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s*(g<1?eOut(g):1),s);dummy.updateMatrix();walls.setMatrixAt(i,dummy.matrix);roofs.setMatrixAt(i,dummy.matrix);wins.setMatrixAt(i,dummy.matrix)});
+    const fs=fg>0?o.s*eBack(fg):1e-4;dummy.scale.set(fs,fs,fs);dummy.updateMatrix();o.fm.setMatrixAt(o.fi,dummy.matrix);o.fm.instanceMatrix.needsUpdate=true}}
+  if(busy(E.ho)){walls.instanceMatrix.needsUpdate=roofs.instanceMatrix.needsUpdate=wins.instanceMatrix.needsUpdate=true;W.houses.forEach((o,i)=>{const g=clamp((T-o.delay)/.9),s=.2*o.s*Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s*(g<1?eOut(g):1),s);dummy.updateMatrix();walls.setMatrixAt(i,dummy.matrix);roofs.setMatrixAt(i,dummy.matrix);wins.setMatrixAt(i,dummy.matrix)})}
   W.props.forEach((b,bi)=>{const g=clamp((T-b.delay)/.9);b.g.scale.setScalar(Math.max(eBack(g)*b.base,1e-4));b.g.position.y=b.y*rise;if(g>0&&!b.pl){b.pl=1;pluck(196*(1+bi%3*.5),b.x/HW,.05)}});
-  W.lanterns.forEach((o,i)=>{const g=clamp((T-o.delay)/.6),s=Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s,s);dummy.updateMatrix();posts.setMatrixAt(i,dummy.matrix);heads.setMatrixAt(i,dummy.matrix)});
-  instances.forEach(m=>m.instanceMatrix.needsUpdate=true);
-  for(const [m,arr,dur,ys] of W.grass){arr.forEach((o,k)=>{const g=eBack(clamp((T-o.delay)/dur));dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);const s=Math.max(g*o.s,1e-4);dummy.scale.set(s,s*ys,s);dummy.updateMatrix();m.setMatrixAt(k,dummy.matrix)})}
+  if(busy(E.la)){posts.instanceMatrix.needsUpdate=heads.instanceMatrix.needsUpdate=true;W.lanterns.forEach((o,i)=>{const g=clamp((T-o.delay)/.6),s=Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s,s);dummy.updateMatrix();posts.setMatrixAt(i,dummy.matrix);heads.setMatrixAt(i,dummy.matrix)})}
+  W.grass.forEach(([m,arr,dur,ys],gi)=>{if(!busy(E.gr[gi]))return;m.instanceMatrix.needsUpdate=true;arr.forEach((o,k)=>{const g=eBack(clamp((T-o.delay)/dur));dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);const s=Math.max(g*o.s,1e-4);dummy.scale.set(s,s*ys,s);dummy.updateMatrix();m.setMatrixAt(k,dummy.matrix)})});
   const gp=glows.geometry.attributes.position;W.houses.forEach(o=>{gp.setY(o.glow,(o.y+.08*o.s)*rise)});W.lanterns.forEach(o=>gp.setY(o.glow,o.y*rise+.18));W.props.forEach(b=>{if(b.glow!==undefined)gp.setY(b.glow,b.y*rise+b.glowY)});gp.needsUpdate=true;
   fauna.all.forEach(a=>{a.g.visible=T>4.6;const s=a.base*eBack(clamp((T-4.6)/.6));a.g.scale.setScalar(Math.max(s,1e-4))});
   if(T>6.2){mode=mode==='growing'?'view':mode;showUI();if(mode==='view')setHint('Drag to turn the paper. Pinch to zoom. Try the sun button for night.')}
@@ -687,7 +730,7 @@ function updateProps(dt,et){if(!W||!W.props||!W.props.length)return;const night=
       if(mode==='walk'&&AC&&Rr()<dt*6){const d=Math.hypot(heroS.x-b.x,heroS.z-b.z);if(d<1.5)burst('stone',.06*Math.exp(-d*2),clamp((b.x-heroS.x)*2,-1,1))}}
     else if(b.k==='lighthouse'){b.beam.rotation.y+=dt*.8;matBeam.opacity=night*.22*(1-sky.rain*.4)}}
   ga.needsUpdate=true;
-  if(firstFire&&firstFire.g.scale.x>.5*firstFire.base){campLight.position.set(firstFire.x,firstFire.y*rise+.06*firstFire.base,firstFire.z);campLight.intensity=(.35+night*1.3)*(1+Math.sin(et*19)*.12)}}
+  if(firstFire&&firstFire.g.scale.x>.5*firstFire.base){campLight.position.set(firstFire.x,firstFire.y*rise+.06*firstFire.base,firstFire.z);campLight.intensity=sm(.25,.75,night)*1.65*(1+Math.sin(et*19)*.12)}}
 
 /* ================= seasons ================= */
 let season='summer';
@@ -704,7 +747,7 @@ function applySeason(quiet){if(!W||!W.grass||!W.grass.length)return;const S=SEAS
   fl[1].forEach((o,i)=>{tmp.copy(o.c);if(S.fl)tmp.lerp(new THREE.Color(S.fl[0]),S.fl[1]);fl[0].setColorAt(i,tmp)});
   instances.forEach(m=>{if(m.instanceColor)m.instanceColor.needsUpdate=true});
   buildGround();compose();
-  water.material.roughness=season==='winter'?.35:.12;water.material.metalness=season==='winter'?0:.25;
+  water.material.roughness=season==='winter'?.35:.12;water.material.metalness=season==='winter'?0:.25;waterU.uIce.value=season==='winter'?1:0;
   seasonPts.userData.reset=true;
   if(!quiet)toast({spring:'Spring. Blossom on the leafy trees.',summer:'Summer.',autumn:'Autumn. The leaves are turning.',winter:'Winter. The water has frozen, so you can walk on it.'}[season])}
 function setSeason(v){season=v;if(W)W.nav=null;$$('#segSeason button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===v));applySeason()}
@@ -836,7 +879,7 @@ const KEYS=[[0,'#8fa6d8',.4,'#2a3552','#0c0f18',.38,'#0d1424',1],[5,'#8fa6d8',.4
 const LAMP={sun:new THREE.Color('#ffd3a0'),si:1.7,hs:new THREE.Color('#ffe6c4'),hg:new THREE.Color('#2a1a10'),hi:.55,sky:new THREE.Color('#7d6a52'),night:.25};
 const LAMPDIR=new THREE.Vector3(-7,12,-6).normalize();
 const P={sun:new THREE.Color(),hs:new THREE.Color(),hg:new THREE.Color(),sky:new THREE.Color(),si:1,hi:1,night:0};
-const tmpC=new THREE.Color(),sunDir=new THREE.Vector3(),dayDir=new THREE.Vector3();
+const tmpC=new THREE.Color(),RAIN_SKY=new THREE.Color('#7a8088'),sunDir=new THREE.Vector3(),dayDir=new THREE.Vector3();
 function hourParams(h){let a=KEYS[0],b=KEYS[1];for(let i=0;i<KEYS.length-1;i++)if(h>=KEYS[i].h&&h<=KEYS[i+1].h){a=KEYS[i];b=KEYS[i+1];break}
   const t=(h-a.h)/Math.max(.001,b.h-a.h);P.sun.copy(a.sun).lerp(b.sun,t);P.hs.copy(a.hs).lerp(b.hs,t);P.hg.copy(a.hg).lerp(b.hg,t);P.sky.copy(a.sky).lerp(b.sky,t);P.si=lerp(a.si,b.si,t);P.hi=lerp(a.hi,b.hi,t);P.night=lerp(a.night,b.night,t)}
 function setSkyPreset(v){$$('#segLight button').forEach(b=>b.setAttribute('aria-pressed',b.dataset.v===String(v)));
@@ -857,10 +900,10 @@ function updateSky(dt){
   if(isDay)dayDir.set(Math.cos(ang)*.85,Math.max(el,.1),.45).normalize();else dayDir.set(-Math.cos(ang)*.85,Math.max(-el,.35),-.4).normalize();
   sunDir.copy(dayDir).lerp(LAMPDIR,k).normalize();sun.position.copy(sunDir).multiplyScalar(20);
   fill.intensity=.28*(1-sky.night*.6);
-  const skyC=tmpC.copy(P.sky).lerp(LAMP.sky,k).lerp(new THREE.Color('#7a8088'),rn*.6);
+  const skyC=tmpC.copy(P.sky).lerp(LAMP.sky,k).lerp(RAIN_SKY,rn*.6);
   const walk=mode==='walk'||(mode==='flying'&&tween&&tween.intoWalk);
-  if(walk){const fk=(mode==='flying'&&tween)?Math.pow(clamp(tween.t),2.5):1;const bgC=DESK_BG.clone().lerp(skyC,fk);scene.background=bgC;if(!scene.fog)scene.fog=new THREE.FogExp2(bgC.clone(),.13);scene.fog.color.copy(bgC);scene.fog.density=(.13+rn*.12)*fk}
-  else{scene.fog=null;scene.background=DESK_BG.clone().lerp(skyC.clone().multiplyScalar(.5),(1-k)*.55)}
+  if(walk){const fk=(mode==='flying'&&tween)?Math.pow(clamp(tween.t),2.5):1;scene.background.copy(DESK_BG).lerp(skyC,fk);scene.fog.color.copy(scene.background);scene.fog.density=(.13+rn*.12)*fk}
+  else{scene.fog.density=0;scene.background.copy(DESK_BG).lerp(skyC.multiplyScalar(.5),(1-k)*.55)}
   const inWalk=mode==='walk';
   sunSpr.visible=inWalk&&k<.9&&isDay;moonSpr.visible=inWalk&&k<.9&&!isDay;
   if(sunSpr.visible){sunSpr.position.copy(camera.position).addScaledVector(dayDir,35);sunSpr.material.opacity=(1-k)*(1-rn)}
@@ -897,6 +940,8 @@ function ensureAudio(){if(AC){if(AC.state==='suspended')AC.resume();return}
   A.cr=gain(0);const co=AC.createOscillator();co.type='triangle';co.frequency.value=4300;const am=gain(0),lfo=AC.createOscillator();lfo.type='square';lfo.frequency.value=32;const ld=gain(.5);lfo.connect(ld).connect(am.gain);am.gain.value=.5;
   co.connect(am).connect(flt('bandpass',4300,6)).connect(A.cr).connect(master);co.start();lfo.start();
 }
+// creating the AudioContext blocks for up to a few hundred ms: do it once the first gesture ends, not mid-stroke
+['pointerup','touchend','keyup'].forEach(ev=>addEventListener(ev,()=>{if(!AC)setTimeout(ensureAudio,60)},{capture:true}));
 function panner(p){if(AC.createStereoPanner){const s=AC.createStereoPanner();s.pan.value=clamp(p,-1,1);s.connect(master);return s}return master}
 function pluck(f,pan=0,v=.05){if(!AC||muted)return;const t=AC.currentTime,g=AC.createGain(),out=panner(pan);g.connect(out);
   g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+.006);g.gain.exponentialRampToValueAtTime(.0001,t+1.6);
@@ -983,7 +1028,7 @@ function makeHero(){const M=c=>new THREE.MeshStandardMaterial({color:c,roughness
   root.traverse(m=>{if(m.isMesh){m.castShadow=true}});
   return {g:root,body,hips,spine,neck,head,arms,legs,tail,lant,lb,jacket,scarf,hatG,ranger:[brim,crown,band],lookHat:'ranger'}}
 const hero=makeHero(myLook);setLook(hero,myLook);hero.g.visible=false;scene.add(hero.g);
-const heroLight=new THREE.PointLight('#ffb45a',0,1.1,2);hero.lb.add(heroLight);
+const heroLight=new THREE.PointLight('#ffb45a',0,1.1,2);scene.add(heroLight);
 const heroS={x:0,z:0,y:0,face:0,vx:0,vz:0,sp:0,turn:0,swim:false,camYaw:0,camPitch:.28,dist:.5,look:0,fp:false,path:null,pi:0,stuck:0,stuckToast:0,lean:0};
 const anim={ph:0,sw:0,m:0,r:0,w:0,lastStep:0};
 function animHero(dt,et){const H=hero,s=heroS,A0=anim;
@@ -1012,7 +1057,8 @@ function animHero(dt,et){const H=hero,s=heroS,A0=anim;
   H.body.rotation.x=w*1.2;
   H.tail.rotation.x=.25+s.sp*3.5+Math.sin(et*9)*.08*m;H.tail.rotation.z=Math.sin(et*6.3)*.1*m;
   H.lant.visible=lantOn;H.lant.rotation.x=-a0(H)*.6+Math.sin(et*4)*.05*m;
-  H.g.position.set(s.x,s.y,s.z);H.g.rotation.y=s.face;H.g.visible=!s.fp&&mode!=='draw'}
+  H.g.position.set(s.x,s.y,s.z);H.g.rotation.y=s.face;H.g.visible=!s.fp&&mode!=='draw';
+  if(H===hero&&heroLight.intensity>0)H.lb.getWorldPosition(heroLight.position)}
 const a0=H=>H.arms[1].sh.rotation.x+H.arms[1].elbow.rotation.x;
 function footstep(){const s=heroS,t=typeAt(s.x,s.z),onB=W&&W.bridge[cellOf(s.x,s.z)],fz=season==='winter'&&waterAt(s.x,s.z)>.45;
   if(s.swim){burst('swim',.1);ripple(s.x,s.z,.07);return}
@@ -1142,7 +1188,7 @@ let drawing=false,last=null;const ptrs=new Map();let pinch0=0,r0=0;
 let joy=null,look=null;const keys={};
 const joyEl=$('#joy'),knob=joyEl.firstElementChild;
 function joyEnd(){joy=null;joyEl.classList.add('hidden');knob.style.transform=''}
-const onDown=e=>{ensureAudio();if(e.isPrimary){ptrs.clear();drawing=false}
+const onDown=e=>{if(AC)ensureAudio();if(e.isPrimary){ptrs.clear();drawing=false}
   ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY,x0:e.clientX,y0:e.clientY,t0:performance.now()});closePops();
   if(mode==='draw'){if(ptrs.size>1)return;const p=worldAt(e);if(!p)return;pushUndo();
     if(tool==='stamp'){if(curStamp==='none'){if(!removeStampsNear(p.x,p.z,.7))undoStack.pop()}else{stamps.push({k:curStamp,x:p.x,z:p.z});drawStampIcon(curStamp,p.x,p.z);pluck(392+Rr()*200,p.x/HW,.04)}return}
@@ -1475,7 +1521,14 @@ if(standalone)setTimeout(openSharedFromHash,600);
 addEventListener('hashchange',()=>{if(standalone&&mode==='draw')openSharedFromHash()});
 
 /* ================= loop ================= */
-const clock=new THREE.Clock();let lastInput={f:0,s:0};
+const clock=new THREE.Clock(),tmpV2=new THREE.Vector2();let lastInput={f:0,s:0},shTick=0;
+/* adaptive resolution: drop the pixel ratio when frames run long, win it back when there is headroom */
+let prK=PR0,prFt=16.7,prN=0,prCool=0,prBack=6000;
+function adaptRes(dt){if(dt>.1||tween||mode==='growing'||document.hidden||warmNow||warmQ.length){prN=0;return}
+  prFt=prFt*.94+dt*1e3*.06;if(++prN<90)return;const now=performance.now();
+  if(prFt>23&&prK>PRMIN){prK=Math.max(PRMIN,prK*.86);if(now<prCool+prBack*2)prBack=Math.min(prBack*2,120000);prCool=now;setPR()}
+  else if(prFt<17.4&&prK<PR0&&now>prCool+prBack){prK=Math.min(PR0,prK*1.08);prCool=now;setPR()}}
+function setPR(){prN=0;prFt=16.7;renderer.setPixelRatio(prK);renderer.setSize(innerWidth,innerHeight,false)}
 function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta(),.05),et=clock.elapsedTime;
   if(queue.length){for(let k=0;k<45&&queue.length;k++){const q=queue.shift();if(q[0]==='s'){stamps.push({k:q[1],x:q[2],z:q[3]});drawStampIcon(q[1],q[2],q[3]);pluck(523,0,.03)}else stamp(q[0],q[1],q[2],q[3])}brushSpeed+=20}
   if(dirty&&grownK===0){compose();dirty=false}
@@ -1493,15 +1546,40 @@ function frame(){requestAnimationFrame(frame);const dt=Math.min(clock.getDelta()
   else if(mode==='walk'){heroCamPose(camWant,fwdV);if(heroS.fp){camera.position.copy(camWant);camLookS.copy(fwdV)}else{camera.position.lerp(camWant,1-Math.exp(-dt*7));camLookS.lerp(fwdV,1-Math.exp(-dt*16))}camera.lookAt(camLookS);lastLook.copy(camLookS)}
   else{if(mode==='map'){sph.theta+=0}if(cine&&mode==='view'){sph.theta+=dt*.07;sph.phi=clamp(.95+Math.sin(et*.13)*.22,.3,1.3);sph.r=lerp(sph.r,viewPose().r*(.72+Math.sin(et*.09)*.12),dt*.3)}
     sphPos(sph,camera.position);camera.lookAt(sph.target);lastLook.copy(sph.target)}
-  if(water.visible){if(season==='winter')water.material.color.setHSL(.54,.28,.8*(1-sky.night*.55));else water.material.color.setHSL(.56,.42,(.3+Math.sin(et*.8)*.015)*(1-sky.night*.5));if(growT>=6.5)water.material.opacity=waterOp()}
+  if(water.visible){waterU.uTime.value=et;waterU.uSky.value.copy(scene.background);waterU.uSunDir.value.copy(sunDir);waterU.uSunK.value=clamp(sun.intensity/1.3)*(1-sky.night*.75);if(season==='winter')water.material.color.setHSL(.54,.28,.8*(1-sky.night*.55));else water.material.color.setHSL(.56,.42,(.3+Math.sin(et*.8)*.015)*(1-sky.night*.5));if(growT>=6.5)water.material.opacity=waterOp()}
   const mp=motes.geometry.attributes.position.array;for(let i=0;i<mp.length;i+=3){mp[i+1]+=Math.sin(et*.3+i)*.0015;mp[i]+=Math.cos(et*.2+i*.7)*.001}motes.geometry.attributes.position.needsUpdate=true;
   motes.material.opacity=.55*(1-sky.night*.6);
-  const px=renderer.getDrawingBufferSize(new THREE.Vector2()).y/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));glows.material.uniforms.uPx.value=flies.material.uniforms.uPx.value=smoke.material.uniforms.uPx.value=seasonPts.material.uniforms.uPx.value=px;
+  const px=renderer.getDrawingBufferSize(tmpV2).y/(2*Math.tan(THREE.MathUtils.degToRad(camera.fov)/2));glows.material.uniforms.uPx.value=flies.material.uniforms.uPx.value=smoke.material.uniforms.uPx.value=seasonPts.material.uniforms.uPx.value=px;
   updateAudio(dt);updateMusic();
   if(rec){const s=(performance.now()-recT0)/1000|0;$('#recTime').textContent=`${s/60|0}:${String(s%60).padStart(2,'0')}`}
-  renderer.render(scene,camera);
+  // shadows move slowly: refresh them every other frame (rarely on the still paper)
+  renderer.shadowMap.needsUpdate=++shTick%(mode==='draw'&&!tween&&!W?8:2)===0||photoReq||!!rec;
+  // a point light costs every lit pixel, even at zero intensity: only keep the ones that are glowing
+  campLight.visible=campLight.intensity>.02;heroLight.visible=heroLight.intensity>.02;
+  warmStep();renderer.render(scene,camera);adaptRes(dt);
   if(photoReq){photoReq=false;takePhoto()}
-  if(thumbCb){const cb=thumbCb;thumbCb=null;cb(makeThumb())}}
+  if(thumbCb){const cb=thumbCb;thumbCb=null;cb(makeThumb())}
+  if(DEBUG)debugTick(dt)}
+/* ?debug: frame rate, resolution, draw calls, shader programs */
+const DEBUG=QS.has('debug');let dbgEl=null,dbgN=0,dbgFt=16;
+function debugTick(dt){dbgFt=dbgFt*.95+dt*1e3*.05;if(++dbgN%15)return;if(!dbgEl){dbgEl=document.createElement('div');dbgEl.style.cssText='position:fixed;left:10px;top:calc(env(safe-area-inset-top,0px) + 58px);font:11px/1.4 ui-monospace,Menlo,monospace;color:#fff;background:rgba(0,0,0,.45);padding:6px 8px;border-radius:8px;z-index:9;pointer-events:none;white-space:pre';document.body.append(dbgEl)}
+  const i=renderer.info,b=renderer.getDrawingBufferSize(tmpV2);dbgEl.textContent=`${(1e3/dbgFt).toFixed(0)} fps · ${b.x}×${b.y} · px ${renderer.getPixelRatio().toFixed(2)}\n${i.render.calls} calls · ${(i.render.triangles/1e3).toFixed(0)}k tris · ${i.programs.length} programs · ${mode}`}
+if(DEBUG)window.__pw={renderer,scene,camera,sph,heroS,get W(){return W},get mode(){return mode},get warmLeft(){return warmQ.length}};
+/* shader warm-up: compiling a shader can stall the GPU for hundreds of ms on integrated graphics. Every material the
+   grown world uses is drawn once, hidden under the desk, a few at a time while the paper sits idle, so Grow never freezes. */
+const warmQ=[];let warmNow=null;
+setTimeout(()=>{const sv=seedV,put=o=>{o.position.set(0,-3,0);o.traverse(m=>{m.frustumCulled=false});warmQ.push(o)};
+  const inst=(geo,mat,col,cast)=>{const m=new THREE.InstancedMesh(geo,mat,1);if(col)m.setColorAt(0,new THREE.Color(1,1,1));m.castShadow=cast;m.receiveShadow=true;put(m)};
+  inst(geoPole,matPole,1,true);inst(geoCon,matFol,1,true);inst(geoTuft,matGrass,1,false);inst(geoRock,matRock,1,true);inst(geoRoof,matRoof,1,true);inst(geoWin,matGlow,0,false);inst(geoPost,matDark,1,true);
+  [makeDeer,makeRabbit,makeFish,makeFly,makeBird,makeBoat].forEach(f=>{const o=f();o.g.traverse(m=>{if(m.isMesh)m.castShadow=true});put(o.g)});
+  for(const k in PROPS){const b=PROPS[k]();b.g.traverse(m=>{if(m.isMesh&&m.material!==matBeam)m.castShadow=m.receiveShadow=true});put(b.g)}
+  put(makeHero().g);put(new THREE.Mesh(water.geometry,water.material));put(new THREE.Mesh(ripples[0].geometry,ripples[0].material));
+  put(new THREE.LineSegments(rain.geometry,rain.material));put(new THREE.Points(stars.geometry,stars.material));put(new THREE.Sprite(sunSpr.material));put(makeLabel());
+  // second pass with one point light on: the night variant (lantern or campfire) of every lit material
+  const n=warmQ.length;for(let i=0;i<n;i++)if(warmQ[i].isMesh||warmQ[i].isGroup||warmQ[i].isInstancedMesh){const o=warmQ[i].clone();o.userData.lit=1;warmQ.push(o)}
+  seedV=sv},800);
+function warmStep(){if(warmNow){scene.remove(warmNow);warmNow=null}
+  if(warmQ.length&&mode==='draw'&&!drawing&&!queue.length&&!tween){warmNow=warmQ.shift();scene.add(warmNow);renderer.shadowMap.needsUpdate=true;if(warmNow.userData.lit)campLight.visible=true}}
 frame();
 document.addEventListener('visibilitychange',()=>{if(!AC)return;if(document.hidden)AC.suspend();else AC.resume()});
 (function intro(){let seenIntro=false;try{seenIntro=localStorage.getItem('pw-intro')==='1'}catch(_){}
