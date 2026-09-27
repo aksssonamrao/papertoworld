@@ -1537,7 +1537,14 @@ async function openSharedFromHash(){const m=/^#w=([A-Za-z0-9_\-]+)$/.exec(locati
   if(['spring','summer','autumn','winter'].includes(o.se))setSeason(o.se);
   worldName=typeof o.n==='string'?o.n.slice(0,40):null;toast(`Someone shared ${worldName?'“'+worldName+'”':'a world'} with you. Watch it grow…`);
   setTimeout(()=>grow(),900)}
-$('#tShare').onclick=shareWorld;$('#mShare').onclick=()=>{closePops();shareWorld()};
+$('#tShare').onclick=shareWorld;
+/* if the GPU resets, say so instead of freezing, and reload with the world packed into the link so nothing is lost */
+let ctxGone=false;
+async function reloadKeepingWorld(){try{if(standalone&&(W||stamps.length||dens[1].some(v=>v>0)||[2,3,4,5,6,7,8,9].some(t=>dens[t].some(v=>v>0))))history.replaceState(null,'','#w='+await makeShareCode())}catch(_){}location.reload()}
+canvas.addEventListener('webglcontextlost',e=>{e.preventDefault();if(ctxGone)return;ctxGone=true;const el=$('#nogl');el.textContent='';const box=document.createElement('div');
+  const p=document.createElement('p');p.textContent='The graphics card was reset, so the world paused. Reload to carry on where you were.';
+  const b=document.createElement('button');b.className='primary';b.style.maxWidth='260px';b.textContent='Reload';b.onclick=reloadKeepingWorld;box.append(p,b);el.append(box);el.classList.remove('hidden')},false);
+canvas.addEventListener('webglcontextrestored',reloadKeepingWorld,false);$('#mShare').onclick=()=>{closePops();shareWorld()};
 if(standalone)setTimeout(openSharedFromHash,600);
 addEventListener('hashchange',()=>{if(standalone&&mode==='draw')openSharedFromHash()});
 
