@@ -1,0 +1,10 @@
+{
+  "name": "papertoworld",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PaperToWorld: draw it, grow it, walk in it.",
+  "scripts": {
+    "dev": "npx --yes serve@14 papertoworld -l 3000",
+    "start": "npx --yes serve@14 papertoworld -l 3000"
+  }
+}
