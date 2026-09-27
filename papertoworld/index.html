@@ -634,12 +634,14 @@ function clearWorld(){if(W&&W.props)W.props.forEach(b=>scene.remove(b.g));campLi
   glows.geometry.setDrawRange(0,0);flies.geometry.setDrawRange(0,0);smoke.geometry.setDrawRange(0,0);ripples.forEach(r=>r.visible=false)}
 
 const PETALS=['#f4efe3','#f2d05a','#e89ab0','#b69cf0','#e8674f'];
-function buildGround(){const {B,land,type,hill,cellH}=W;srand(W.seed+99);
+function buildGround(){const {B,land,type,hill,cellH,dune}=W;srand(W.seed+99);
   const sc=mkCanvas(G),sx=sc.getContext('2d'),img=sx.createImageData(G,G);
   const mix=(c,d,t)=>{c[0]=lerp(c[0],d[0],t);c[1]=lerp(c[1],d[1],t);c[2]=lerp(c[2],d[2],t)};
   for(let i=0;i<G*G;i++){const c=[239,231,214],hv=sm(.1,.9,hill[i]),h=cellH[i];
     mix(c,[88,116,54],sm(.12,.45,land[i]));mix(c,[116,146,60],sm(.3,.6,B[2][i]));mix(c,[104,140,58],sm(.3,.6,B[6][i]));mix(c,[54,78,40],sm(.3,.6,B[1][i]));
     mix(c,[lerp(96,146,hv),lerp(108,138,hv),lerp(52,92,hv)],sm(.3,.6,B[4][i]));
+    // hills ringed by sand are dunes: sandy, lit a little paler on the crests
+    mix(c,[lerp(196,230,hv),lerp(166,200,hv),lerp(110,146,hv)],sm(.3,.6,B[4][i])*sm(.12,.35,dune[i]));
     mix(c,[222,196,140],sm(.3,.6,B[7][i]));
     mix(c,[118,112,104],sm(.25,.6,B[8][i])*sm(.3,1,h));mix(c,[238,240,245],sm(2.5,3.1,h));
     mix(c,[150,142,100],sm(.3,.6,B[9][i]));mix(c,[178,154,114],sm(.35,.6,B[5][i]));
@@ -692,7 +694,7 @@ function grow(){
     h=lerp(h,.13*L,V*.8);
     if(ix===0||iz===0||ix===G||iz===G)h=0;Hgrid[iz*(G+1)+ix]=Math.max(0,h)}
   const cellH=new Float32Array(G*G);for(let gz=0;gz<G;gz++)for(let gx=0;gx<G;gx++)cellH[gz*G+gx]=hRaw(-HW+(gx+.5)*CELL,-HW+(gz+.5)*CELL);
-  W={B,land,type,WB,cellH,hill,seed:dh+variant*7919,savedId:pendingSavedId,mood:surpriseMood};pendingSavedId=null;buildGround();srand(W.seed);
+  W={B,land,type,WB,cellH,hill,dune:blur(B[7],6),seed:dh+variant*7919,savedId:pendingSavedId,mood:surpriseMood};pendingSavedId=null;buildGround();srand(W.seed);
   Object.assign(W,{trees:[],grass:[],houses:[],lanterns:[],cells:{},props:[],bridge:new Uint8Array(G*G)});
   // scatter
   const T=W.trees,Tu=[],Fl=[],Ro=[],Ho=W.houses,La=W.lanterns;
@@ -711,7 +713,7 @@ function grow(){
     if(t===1){if(R()<.62){const k=ch>1.3?1:(W.WB[i]>.12&&R()<.6)?0:(R()<.72?1:0);tree(k,.55+.5*B[1][i]+R()*.25)}if(R()<.5)tuft('#3d5a2a');if(R()<.1)cells.glowy.push([cx,cz])}
     else if(t===2){tuft('#7e9a3e');tuft('#8aa446');if(R()<.25)flower(pick(PETALS));if(R()<.012)tree(0,1.1+R()*.4);cells.meadow.push([cx,cz]);cells.graze.push([cx,cz]);if(R()<.08)cells.glowy.push([cx,cz])}
     else if(t===6){tuft('#789a3c');const pi=vnoise(cx*.7,cz*.7)*PETALS.length|0;for(let k=0;k<3;k++)flower(R()<.8?PETALS[pi]:pick(PETALS));cells.flower.push([cx,cz]);cells.graze.push([cx,cz])}
-    else if(t===4){if(R()<.6)tuft('#6f7a3a');if(R()<.05)rock('#8d877a',.7+R()*.9);if(R()<.06)tree(1,.5+R()*.3);cells.graze.push([cx,cz])}
+    else if(t===4){const dn=W.dune[i]>.3;if(R()<(dn?.1:.6))tuft(dn?'#b8a466':'#6f7a3a',dn?.8:1);if(R()<.05)rock(dn?'#e6dcc8':'#8d877a',.7+R()*.9);if(R()<.06)tree(dn?3:1,dn?.8+R()*.4:.5+R()*.3);cells.graze.push([cx,cz])}
     else if(t===5){if(R()<.07)rock('#a39a88',.3+R()*.3);if(R()<.06){const [x,z]=J(.4);if(far(La,x,z,.75))La.push({x,z,y:hRaw(x,z),s:1,rot:R()*6,delay:3+R()})}}
     else if(t===7){if(R()<.05)rock('#e6dcc8',.25+R()*.3);if(W.WB[i]>.08){if(R()<.05)tree(2,.7+R()*.4)}else if(R()<.025)tree(3,.8+R()*.5);if(R()<.1)tuft('#b8a466',.8)}
     else if(t===8){if(ch<1.5&&R()<.12)tree(1,.45+R()*.35);if(R()<.12)rock(ch>2.7?'#dcdde2':'#8b8a88',.8+R()*1.2);if(ch<.9&&R()<.3)tuft('#6a7440')}
