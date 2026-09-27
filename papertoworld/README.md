@@ -39,7 +39,7 @@ Push this folder to a repo and import it at vercel.com/new. Every push then rede
 
 ## Features that work anywhere
 
-Painting with 9 inks and 4 stamps; **Surprise me**, which paints one of eight themed landscapes (River valley, Archipelago, Mountain lake, Desert oasis, Seaside, Farmland, Enchanted forest, Snowy peaks), each randomised, turned and mirrored, or lets you pick a theme from the ▾ menu; growing the world; wildlife; light presets (Lamp, Dawn, Noon, Dusk, Night) with day passing on its own; rain; all four seasons; walking, swimming and fishing; tap-to-go route-finding and the map; the field journal; your wanderer's look; music; photos (postcards) and video recording, which download straight to the device.
+Painting with 9 inks and 4 stamps; **Surprise me**, which paints one of eight themed landscapes (River valley, Archipelago, Mountain lake, Desert oasis, Seaside, Farmland, Enchanted forest, Snowy peaks), each randomised, turned and mirrored, or lets you pick a theme from the ▾ menu (some themes also bring their own season or light); growing the world; wildlife; light presets (Lamp, Dawn, Noon, Dusk, Night) with day passing on its own; rain; all four seasons; walking, swimming and fishing; tap-to-go route-finding and the map; the field journal; your wanderer's look; music; photos (postcards) and video recording, which download straight to the device.
 
 **Saved worlds** are kept in the visitor's own browser when the site runs on Vercel.
 
