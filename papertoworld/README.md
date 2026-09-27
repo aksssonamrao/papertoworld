@@ -57,9 +57,20 @@ These use Claude's hosting runtime, so on Vercel they switch off cleanly. Worlds
 2. **The land is shaped from those regions.** Hills and mountains raise a heightfield: mountains use a ridged noise and get snow above a set height. Water dips below a translucent water surface. Paths flatten and get lanterns, and villages flatten and get houses.
 3. **Things grow depending on what's around them.** Pines grow up on mountains and leafy trees grow near water. Sand next to water gets palms, while sand away from water gets cacti. Big meadows get deer and rabbits, and big lakes get a paper boat. Bridges appear wherever a path crosses water.
 4. **Same drawing, same world.** A seed comes from your drawing, so it grows the same way every time. **Regrow** changes the seed.
-5. **Rendering.** Thousands of trees, grass tufts and flowers are drawn as instanced meshes, with a small shader that makes them sway in the wind. Glows, fireflies and chimney smoke use a custom point-sprite shader. Lighting blends between a desk-lamp look and a full sun/moon cycle.
+5. **Rendering.** Thousands of trees, grass tufts and flowers are drawn as instanced meshes, with a small shader that makes them sway in the wind. Glows, fireflies and chimney smoke use a custom point-sprite shader. Lighting blends between a desk-lamp look and a full sun/moon cycle. The water has wind-ripple normals, reflects the sky at grazing angles (Fresnel), catches a sun glint and shows a soft foam line at the shore.
 6. **Sound is synthesised live, with no audio files.** It includes wind, water that gets louder near it, birdsong, crickets, rain, footsteps that change with the ground, and campfire crackle. Growing trees play notes from their left-to-right position, so every drawing plays its own little tune.
 7. **Walking.** A jointed character with walk, jog, swim and fishing poses. The over-the-shoulder camera doesn't clip into hills, and route-finding (A*) walks you around trees, over bridges and along paths.
+
+## Performance
+
+- **Adaptive resolution.** When frames run long, the pixel ratio drops step by step (never below 0.6), and it climbs back when there is headroom.
+- **No shader stalls.** Every material is compiled once while the blank paper sits idle, and fog and light counts stay constant. Grow, walking in and nightfall therefore never freeze while shaders compile.
+- **Cheaper shadows.** The shadows use PCF with a wide radius. The shadow map refreshes every other frame, and low-poly stand-ins cast the tree shadows.
+
+| URL option | Effect |
+|---|---|
+| `?debug` | Shows frame rate, resolution, draw calls, triangles and shader programs |
+| `?pr=1.5` | Pins the pixel ratio and turns adaptive resolution off (useful for screenshots) |
 
 ## Browser support
 

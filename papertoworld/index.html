@@ -126,6 +126,23 @@ body.walking .mark{ display:none; }
 .catches{ margin-top:18px; } .catches h3{ margin:0 0 8px; font:400 18px var(--serif); }
 .crow{ display:flex; align-items:center; gap:10px; padding:9px 4px; border-top:1px solid var(--line); font-size:14px; }
 .crow b{ font-size:22px; font-weight:400; width:30px; text-align:center; } .crow i{ margin-left:auto; font-style:normal; color:var(--muted); font-size:13px; }
+/* short screens (phones held sideways): one row of inks so the paper stays visible */
+@media (max-height:560px){
+  .panel{ max-width:780px; padding:6px 10px 8px; border-radius:16px; }
+  .tabs{ margin-bottom:4px; } .seg button{ padding:5px 2px; }
+  .pots{ grid-template-columns:repeat(10,1fr); } .pots.stamps{ grid-template-columns:repeat(5,1fr); }
+  .pot{ font-size:10.5px; gap:3px; padding:2px 0; } .sw{ width:26px; height:26px; }
+  .row{ margin:4px 0 6px; } .size{ height:28px; } .ghost{ padding:6px 9px; }
+  .primary{ padding:9px; font-size:15px; }
+  #intro{ bottom:calc(env(safe-area-inset-bottom,0px) + 190px); }
+}
+/* short and wide: the ink tray docks to the left and the paper sits in the space beside it */
+@media (max-height:560px) and (min-aspect-ratio:4/3){
+  #tray{ left:calc(env(safe-area-inset-left,0px) + 12px); right:auto; top:calc(env(safe-area-inset-top,0px) + 60px); bottom:calc(env(safe-area-inset-bottom,0px) + 12px);
+    width:300px; margin:0; overflow-y:auto; touch-action:pan-y; display:flex; flex-direction:column; }
+  #tray .pots{ grid-template-columns:repeat(5,1fr); } #tray .primary{ margin-top:auto; } #tray .row{ flex-wrap:wrap; row-gap:6px; }
+  #intro{ left:auto; right:12px; margin:0; bottom:calc(env(safe-area-inset-bottom,0px) + 16px); width:min(380px, calc(100% - 340px)); }
+}
 .hidden{ display:none !important; }
 button:focus-visible{ outline:2px solid var(--brass); outline-offset:2px; }
 </style>
@@ -512,10 +529,13 @@ const sph={theta:0,phi:.1,r:40,target:new THREE.Vector3()};
 let tween=null, cine=false;
 const lastLook=new THREE.Vector3();
 function sphPos(s,out=new THREE.Vector3()){return out.set(s.target.x+s.r*Math.sin(s.phi)*Math.sin(s.theta),s.target.y+s.r*Math.cos(s.phi),s.target.z+s.r*Math.sin(s.phi)*Math.cos(s.theta))}
+function traySide(){const t=$('#tray');return mode==='draw'&&t.offsetWidth>0&&t.offsetWidth<innerWidth*.55&&t.offsetHeight>innerHeight*.5?t.offsetLeft+t.offsetWidth+8:0}
 function trayH(){const el=mode==='draw'?$('#tray'):$('#viewbar');return el.offsetHeight?el.offsetHeight+24:250}
-function drawPose(){const fv=THREE.MathUtils.degToRad(38)/2,asp=innerWidth/innerHeight,top=60,bot=trayH(),avail=(innerHeight-top-bot)/innerHeight;
-  const d=Math.max(8.9/(Math.tan(fv)*asp),8.4/(Math.tan(fv)*avail));
-  return {theta:0,phi:.1,r:d,target:new THREE.Vector3(0,0,((bot-top)/innerHeight)*d*Math.tan(fv)),fov:38}}
+function drawPose(){const fv=THREE.MathUtils.degToRad(38)/2,tf=Math.tan(fv),asp=innerWidth/innerHeight,left=traySide(),top=60,bot=left?16:trayH();
+  const availH=Math.max(.3,(innerHeight-top-bot)/innerHeight),availW=(innerWidth-left)/innerWidth;
+  const d=Math.max(8.9/(tf*asp*availW),8.4/(tf*availH));
+  // shift the view so the paper is centred in the space the tray leaves free
+  return {theta:0,phi:.1,r:d,target:new THREE.Vector3(-(left/innerWidth)*d*tf*asp,0,((bot-top)/innerHeight)*d*tf),fov:38}}
 function viewPose(){const p=drawPose(),a=innerWidth/innerHeight;return {theta:.3,phi:.95,r:Math.max(p.r*(a<1?1.1:.8),13),target:new THREE.Vector3(0,.3,a<1?-.6:.3),fov:38}}
 function setSph(p){sph.theta=p.theta;sph.phi=p.phi;sph.r=p.r;sph.target.copy(p.target)}
 function flyTo(pos,look,fov,dur,done){tween={p0:camera.position.clone(),l0:lastLook.clone(),f0:camera.fov,p1:pos,l1:look,f1:fov,t:0,dur,done,cur:lastLook.clone()}}
@@ -1229,7 +1249,8 @@ addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
 
 /* ================= UI ================= */
 let hintT;function setHint(t,ms){const h=$('#hint');h.textContent=t;h.classList.remove('fade');placeHint();clearTimeout(hintT);if(ms)hintT=setTimeout(()=>h.classList.add('fade'),ms)}
-function placeHint(){const panel=mode==='draw'?$('#tray'):mode==='view'?$('#viewbar'):mode==='map'?$('#mapbar'):null;const b=panel&&panel.offsetHeight?panel.offsetHeight+22:24;$('#hint').style.bottom=`calc(env(safe-area-inset-bottom,0px) + ${b}px)`}
+function placeHint(){const panel=mode==='draw'?$('#tray'):mode==='view'?$('#viewbar'):mode==='map'?$('#mapbar'):null,side=traySide(),h=$('#hint');
+  const b=side?16:panel&&panel.offsetHeight?panel.offsetHeight+22:24;h.style.bottom=`calc(env(safe-area-inset-bottom,0px) + ${b}px)`;h.style.left=side+'px';h.style.width=side?`calc(100% - ${side+24}px)`:''}
 function showUI(){const m=mode,live=m==='view'||m==='walk';
   document.body.classList.toggle('drawing',m==='draw');$('#tray').classList.toggle('hidden',m!=='draw');$('#viewbar').classList.toggle('hidden',m!=='view');$('#mapbar').classList.toggle('hidden',m!=='map');$('#tMap').classList.toggle('hidden',m!=='walk');
   if(m==='map'){$('#mGo').disabled=true;$('#mJump').disabled=true}if(m!=='draw')$('#intro').classList.add('hidden');
