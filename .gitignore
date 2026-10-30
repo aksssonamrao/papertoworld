@@ -2,3 +2,14 @@ node_modules/
 .vercel/
 .DS_Store
 Thumbs.db
+dist/
+artifacts/
+.sites-runtime/
+# Radix comparison and its notes stay local (team post only, never shipped)
+docs/
+papertoworld/demos/
+videos/
+/*.mp4
+scripts/check-comparison.mjs
+scripts/compare-renderers.mjs
+scripts/create-comparison-video.mjs

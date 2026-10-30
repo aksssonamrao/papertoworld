@@ -1,0 +1,8 @@
+{
+  "name": "@sparkjsdev/radix",
+  "version": "0.0.1",
+  "source": "https://registry.npmjs.org/@sparkjsdev/radix/-/radix-0.0.1.tgz",
+  "integrity": "sha512-9eFB/D+A0okR08a9UhMsw6efRqc7r41vjmcIAJ63zQn1u8HsCJNJi8xjSbXfw9cClLmRo9axxLoD57ue+hOH7A==",
+  "license": "MIT",
+  "note": "Official prebuilt ESM bundle, integrity verified before extraction. Vendored because the 0.0.1 manifest lists a mandatory Darwin-only fsevents dependency. Runtime imports are three, three/webgpu and three/tsl; the build resolves them to the pinned Three.js package."
+}
