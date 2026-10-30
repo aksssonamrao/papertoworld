@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>A little world that learns · Paperworld</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23253a32'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23e08a5c'%3E%E2%9C%B3%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css"></head>
+<body>
+<header class="site"><div class="site-inner"><a class="brand" href="/">P<span>✳</span>PERWORLD</a><span class="edition">FIELD NOTES / 001</span>
+<nav><a href="#act-one">Act I</a><a href="#village">Act II</a><a href="#capacity">Capacity</a><a href="#scale">Scale</a><a href="#scorecard">Act III</a></nav></div></header>
+<main>
+
+<section class="intro">
+  <div class="intro-copy">
+    <div class="eyebrow">EIGHT PEOPLE. THREE MODELS. ONE SMALL GPU.</div>
+    <h1>A little world<br>that <em>learns.</em></h1>
+  </div>
+  <div class="intro-side">
+    <p class="lede">Habits handle the ordinary. Memory keeps the past. Careful thought earns its place.</p>
+    <div class="hero-stats">
+      <div><b id="stat-quality">105.05%</b><span>of the All-Gemma score on 144 held-out decisions</span></div>
+      <div><b id="stat-calls">14 / 144</b><span>decisions that actually asked Gemma</span></div>
+      <div><b>6 GB</b><span>of VRAM on one RTX 2060</span></div>
+    </div>
+  </div>
+  <ol class="models">
+    <li><span class="step">01 · HABIT</span><strong>Julia-1</strong><small>Quick choices for the ordinary moments of a day.</small></li>
+    <li><span class="step">02 · MEMORY</span><strong>EmbeddingGemma</strong><small>Personal memory, kept separately for each villager.</small></li>
+    <li><span class="step">03 · THOUGHT</span><strong>Gemma</strong><small>Deliberation, called only when it is likely to help.</small></li>
+  </ol>
+</section>
+
+<section class="hook" id="act-one">
+  <div class="hook-copy">
+    <div class="eyebrow">ACT I / MORE THOUGHT ISN’T ALWAYS BETTER</div>
+    <h2>Spend thought<br>where it helps.</h2>
+    <p>On 144 frozen decisions, selective deliberation earned a higher immediate-reward score than asking Gemma every time.</p>
+    <p class="fine">A small held-out replay, not a claim about universal intelligence or full-day village quality. All-Gemma is a reference policy, not an oracle.</p>
+  </div>
+  <figure class="plot-card">
+    <figcaption><span>Score relative to All-Gemma</span><span class="legend">↑ better · ← cheaper</span></figcaption>
+    <div class="plot" id="chart" aria-label="Frozen decision replay: score versus Gemma calls"></div>
+    <div class="plot-x"><span>0</span><span>Gemma calls out of 144 decisions</span><span>144</span></div>
+  </figure>
+</section>
+
+<section class="example-card">
+  <div class="example-head"><div class="eyebrow">A REAL COUNTEREXAMPLE · FLOOD REPLAY</div><p>Sometimes the quick habit is the better choice.</p></div>
+  <div id="example"></div>
+</section>
+
+<section class="act-two" id="village">
+  <div class="section-top"><div><div class="eyebrow">ACT II / A HOUSE CATCHES FIRE AT NOON</div><h2>Same village.<br>Different use of thought.</h2></div><span class="badge" id="provenance">Loading recorded evidence…</span></div>
+  <p class="section-note">Individual lives in the actual Free Village engine: walks, work, conversations, consequences. Recorded runs use the local models. Live runs execute sequentially so each policy has the GPU to itself.</p>
+
+  <div class="stage">
+    <div class="controls">
+      <button id="play" class="primary">Play recorded day</button>
+      <button id="fire" class="ghost">🔥 Jump to noon</button>
+      <span class="sep"></span>
+      <div class="sizes" id="sizes" role="group" aria-label="Village size" hidden></div>
+      <select id="axis" aria-label="Replay clock"><option value="story">Story time · align village clocks</option><option value="wall">Compute time · measured waiting</option></select>
+      <select id="speed" aria-label="Playback speed"><option value="1">1×</option><option value="4">4×</option><option value="8">8×</option></select>
+      <span id="clock">06:00</span>
+    </div>
+    <div class="panel-heading">
+      <div><span class="tag baseline">Baseline</span><strong>Ask Gemma every time</strong><small id="baseline-sub">FIFO client submissions · four backend slots</small></div>
+      <div><span class="tag adaptive">Adaptive</span><strong>Learned regret + rolling credits</strong><small>Public emergency coalitions · private memories stay individual</small></div>
+    </div>
+    <div class="viewport"><canvas id="world"></canvas><div class="spent left" id="spent-left" hidden></div><div class="spent right" id="spent-right" hidden></div><div id="empty">The recorded day is being prepared. Act I and the scorecard are available now.</div><div class="world-label left" id="label-left">06:00 · morning</div><div class="world-label right" id="label-right">06:00 · morning</div><div class="view-hint">Drag to orbit · scroll to zoom</div></div>
+    <div class="metrics"><div id="baseline-metrics"></div><div id="runtime-metrics"></div></div>
+    <div class="timeline-wrap" id="timeline-wrap">
+      <input id="timeline" type="range" min="6" max="22" step="0.01" value="6" aria-label="Village replay timeline">
+      <span class="tl-fire" aria-hidden="true"></span>
+      <div class="timeline-labels"><span>06:00 · a quiet morning</span><span class="mid">12:00 · the fire</span><span>22:00 · what they learned</span></div>
+    </div>
+  </div>
+
+  <div class="follow">
+    <div class="follow-label">Follow a villager</div>
+    <div class="people" id="people"></div>
+  </div>
+  <p class="person-note" id="person-note">Choose a villager to follow their experience. These people learn from the simulator’s outcomes; the regret model itself is fixed for this comparison.</p>
+
+  <div class="outcomes"><div class="outcomes-title">Full-day outcomes</div><div id="run-summary">Full-day outcomes will appear with the recording.</div></div>
+
+  <div class="console">
+    <div class="live-box">
+      <div><div class="eyebrow">RUN THE THREE MODELS LOCALLY</div><p id="live-note">Replay works without models. A new run needs the local brain with Julia-1, EmbeddingGemma and Gemma.</p></div>
+      <label>World seed <input id="seed" type="number" min="0" max="100000" value="3"></label>
+      <button id="run" class="primary">Run a new comparison ↗</button>
+    </div>
+    <div class="telemetry"><span id="backend">Backend: checking…</span><span id="queue">Active / queued: —</span><span id="gpu">GPU memory: unavailable</span><span class="tele-note">Live telemetry, independent of recorded playback</span></div>
+  </div>
+</section>
+
+<section class="capacity" id="capacity" hidden>
+  <div class="cap-head">
+    <div><div class="eyebrow">ACT II½ / MORE PEOPLE, SAME GPU</div><h2>Thought spent well<br>leaves room for more lives.</h2></div>
+    <p>Every village below got the same wall-clock budget on the same RTX 2060 to live one story day, fire at noon included. Extra villagers are renamed copies of the eight, each family in a house of its own. Drag the budget to see how far each village gets.</p>
+  </div>
+  <div class="cap-card">
+    <div class="cap-top">
+      <p class="cap-headline" id="cap-headline"></p>
+      <label class="budget"><span>Compute budget per story day <b id="budget-label"></b></span><input type="range" id="budget" min="30" max="900" step="15" value="900" aria-label="Compute budget per story day"></label>
+    </div>
+    <div class="lanes" id="lanes"></div>
+    <div class="lane-axis"><span>06:00</span><span class="mid">12:00 · fire</span><span>22:00</span></div>
+  </div>
+  <p class="cap-quality" id="cap-quality" hidden></p>
+  <div class="cap-failure" id="cap-failure" hidden></div>
+  <div class="cap-table-wrap"><table class="otable cap-table" id="cap-table"></table></div>
+  <p class="fine" id="cap-note"></p>
+</section>
+
+<section class="scale" id="scale">
+  <div class="scale-head"><div class="eyebrow">A SEPARATE SCALE CHECK</div><h2>1,000 agents.<br>A smaller question.</h2></div>
+  <div class="scale-numbers">
+    <div><b>120 → 30</b><span>inference requests</span></div>
+    <div><b>144.9 → 40.5 s</b><span>3.58× measured speedup</span></div>
+    <div><b>120 / 120</b><span>identical reference actions</span></div>
+  </div>
+  <p>This favorable public garden fixture has matching states and full four-person groups. It demonstrates inference packing, not 1,000 independent Free Village characters. The other 880 updates are analytic.</p>
+</section>
+
+<section id="scorecard">
+  <div class="eyebrow">ACT III / THE MATH MET THE MACHINE</div>
+  <h2>Keep the evidence.<br>Even when the idea fails.</h2>
+  <div id="score-rows"></div>
+</section>
+
+<footer><b>Paperworld</b><p>Built and measured on an RTX 2060 with 6 GB VRAM. A four-slot scheduler bounds concurrency; actual memory use is measured, not guaranteed by the slot count.</p><span>Local models. Authoritative world rules. No invented results.</span></footer>
+</main><script src="/vendor/three.r186.min.js"></script><script type="module" src="./app.js"></script></body></html>

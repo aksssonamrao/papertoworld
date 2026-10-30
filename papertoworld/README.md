@@ -35,12 +35,20 @@ Push this folder to a repo and import it at vercel.com/new. Every push then rede
 | `index.html` | The whole app: UI, 3D world, sound engine, everything |
 | `vendor/three.r186.min.js` | three.js r186 with GLTFLoader and SkeletonUtils, bundled into one minified script (MIT licence, see `THREE-LICENSE.txt`). The version is in the file name, so the year-long cache in `vercel.json` never serves a stale copy |
 | `models/` | The skinned wanderer and its animation clips (Quaternius, CC0), a rigged deer (Quaternius, CC0) and a rigged fox (Khronos sample; model CC0, animation CC BY 4.0). See `models/CREDITS.md`. If they can't load, for example when opened from `file://`, the jointed wanderer walks instead |
+| `games/` | The Play menu: `registry.js` lists the games, each game is one script (`siege.js` is Paper Siege, `storybook.js` is the Living Storybook, whose simulation is the plain module `storybook/sim.js`, and `village.js` is the Free Village), and `README.md` explains how to write one |
+| `vendor/cannon-es.0.20.0.js` | cannon-es 0.20.0 physics engine (MIT licence, see `vendor/CANNON-ES-LICENSE.txt`), minified ESM. It is loaded lazily, only when a physics game starts |
 | `og-image.png` | The preview picture when the link is shared |
 | `vercel.json` | Clean URLs, long caching for the library, basic security headers |
 
 ## Features that work anywhere
 
-Painting with 9 inks and 4 stamps; **Surprise me**, which paints one of eight themed landscapes (River valley, Archipelago, Mountain lake, Desert oasis, Seaside, Farmland, Enchanted forest, Snowy peaks), each randomised, turned and mirrored, or lets you pick a theme from the ▾ menu (some themes also bring their own season or light); growing the world; wildlife; light presets (Lamp, Dawn, Noon, Dusk, Night) with day passing on its own; rain; all four seasons; walking, swimming and fishing; tap-to-go route-finding and the map; the field journal; your wanderer's look; music; photos (postcards) and video recording, which download straight to the device.
+Painting with 9 inks and 4 stamps; **Surprise me**, which paints one of nine themed landscapes (River valley, Archipelago, Mountain lake, Desert oasis, Seaside, Farmland, Enchanted forest, Storybook valley, Snowy peaks), each randomised, turned and mirrored, or lets you pick a theme from the ▾ menu (some themes also bring their own season or light); growing the world; wildlife; light presets (Lamp, Dawn, Noon, Dusk, Night) with day passing on its own; rain; all four seasons; walking, swimming and fishing; tap-to-go route-finding and the map; the field journal; your wanderer's look; music; photos (postcards) and video recording, which download straight to the device.
+
+**Living Storybook** (Play menu): three villagers, a fox, rabbits and hens live in your painted world. Rules decide what can happen, sight lines over the real terrain and trees decide who notices, and a journal retells only what the simulation logged, each sentence citing its facts. Watch and follow anyone, paint a wood, a wall or a path while it runs, or walk in and talk, help, promise and tell.
+
+**Free Village** (Play menu): eight villagers with their own trades, debts, secrets and plans. Set off a fire, a flood, a wolf or a rumour wherever and whenever you like, follow anyone, and at 22:00 read what the day did to them. On the public site they think with simple rules; with a local model brain (`?brain`) three local models give them minds.
+
+**A little world that learns** (`/demos/learning/`): a recorded day of the Free Village run by three real local models (Julia-1 for habits, EmbeddingGemma for memory, Gemma for careful thought) on one 6 GB GPU, asking Gemma every time against asking it only when it is likely to help, from 8 up to 64 villagers.
 
 **Saved worlds** are kept in the visitor's own browser when the site runs on Vercel.
 
@@ -61,6 +69,10 @@ These use Claude's hosting runtime, so on Vercel they switch off cleanly. Worlds
 5. **Rendering.** Thousands of trees, grass tufts and flowers are drawn as instanced meshes, with a small shader that makes them sway in the wind. Glows, fireflies and chimney smoke use a custom point-sprite shader. Lighting blends between a desk-lamp look and a full sun/moon cycle. The water has wind-ripple normals, reflects the sky at grazing angles (Fresnel), catches a sun glint and shows a soft foam line at the shore.
 6. **Sound is synthesised live, with no audio files.** It includes wind, water that gets louder near it, birdsong, crickets, rain, footsteps that change with the ground, and campfire crackle. Growing trees play notes from their left-to-right position, so every drawing plays its own little tune.
 7. **Walking.** A skinned, motion-captured-style character (Quaternius CC0) with idle, walk, jog, sprint, swim and torch clips. A small shader dresses it in a jacket in your colour, trousers and boots, and the hat, scarf, pack, lantern and rod ride on its bones. The over-the-shoulder camera doesn't clip into hills, and route-finding (A*) walks you around trees, over bridges and along paths.
+
+## Games
+
+After growing a world, **Play** in the overview bar opens a small menu of games played inside your own painted world. The first is **Paper Siege**: aim a paper cannon and topple card-and-paper castles. The menu is built from `games/registry.js`, and a game talks to the app only through a small `PWHost` bridge (camera, terrain heights, water, wind, sound, a HUD layer). The world keeps living while you play, and **Leave** returns to the overview. To add a game, see `games/README.md`.
 
 ## Performance
 
