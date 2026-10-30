@@ -15,3 +15,9 @@ Legacy programmable GLSL point sprites were replaced with the renderer's `create
 CPU tests in `tests/paper-siege.test.mjs` use real Three transforms and Cannon physics with inert DOM/canvas adapters: fixed site across levels, target defeat, bounded one-shot terrain impact, heightfield refresh, world preservation, idempotent cleanup and exit during loading. Browser integration checks belong to the shared app QA run.
 
 `applyExternalBlast({x,y,z,radius,power})` applies free-walk bomb damage to castle bodies/targets without moving the camera. The orchestrator routes each landscape bomb through this call and the host terrain-impact callback. Sleeping castle physics stops stepping until an external blast wakes bodies. `build(site)` returns a readiness Promise and generation tokens cancel late async completion after Regrow/clear.
+
+## Manning the cannon
+
+Walking within .8 of the cannon shows **Man the cannon** (E). `landscapePlay.enterCannon()` asks the app for `mode='siege'` (`host.enterSiege(site)` stands the wanderer beside the cannon), then `siege.play()` turns the free-roam castle into the full game in place: the level saved in `pw-siege`, the intro flyover, the aim camera, HUD, ammo, stars and the result card. While playing, pointers, wheel and keys route to Paper Siege, and the app's frame loop leaves the camera to it. **Back to walk**, Esc or the card's Leave call `leaveCannon()`: `siege.rest()` hides the HUD and keeps the castle as it was left, and `host.leaveSiege()` flies the camera back to the wanderer. Cannon shots report terrain impacts like hand-thrown bombs.
+
+World generation also clears tree crowns from the cannon camera's spot (about 1.9 behind the cannon) and its sight line to the castle, since splat foliage cannot be hidden per frame the way the classic app shrank tree instances. `scripts/check-cannon.mjs` covers the flow on desktop and a 390×844 phone viewport.

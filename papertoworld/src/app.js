@@ -1533,7 +1533,7 @@ if(QS.get('activities')!=='0')landscapePlay=createLandscapePlay({
  // manning the cannon: the wanderer stands beside it facing the castle while Paper Siege drives the camera
  enterSiege(site){if(mode!=='walk')return false;const c=site.cannon,k=site.castle,l=Math.hypot(k.x-c.x,k.z-c.z)||1,dx=(k.x-c.x)/l,dz=(k.z-c.z)/l;
   mode='siege';joyEnd();look=null;pinch0=0;heroS.path=null;showPath(null);marker.visible=false;heroS.vx=heroS.vz=heroS.sp=0;
-  heroS.x=c.x+dz*.34-dx*.06;heroS.z=c.z-dx*.34-dz*.06;heroS.y=hAt(heroS.x,heroS.z);heroS.camYaw=Math.atan2(-dx,-dz);heroS.face=heroS.camYaw+Math.PI;heroS.camPitch=.28;
+  heroS.x=c.x+dz*.52+dx*.35;heroS.z=c.z-dx*.52+dz*.35;heroS.y=hAt(heroS.x,heroS.z);heroS.camYaw=Math.atan2(-dx,-dz);heroS.face=heroS.camYaw+Math.PI;heroS.camPitch=.28;
   document.body.classList.remove('walking');$('#hint').classList.add('fade');showUI();return true},
  leaveSiege(){if(mode!=='siege')return;if(insideObst(heroS.x,heroS.z)){const [x,z]=nearestFree(heroS.x,heroS.z);heroS.x=x;heroS.z=z;heroS.y=hAt(x,z)}
   mode='flying';showUI();enterWalkCam(()=>{mode='walk';showUI();document.body.classList.add('walking')})}
