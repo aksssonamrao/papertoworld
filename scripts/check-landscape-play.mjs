@@ -75,9 +75,10 @@ try{
   const landed=await page.evaluate(()=>({last:window.__pw.W.impacts.at(-1),thrown:window.__pw.play.debug.stats.thrown,mode:window.__pw.mode}));
   assert.equal(landed.thrown,2);assert.equal(landed.mode,'walk');assert(Math.hypot(landed.last.x-aim.prediction.impact.x,landed.last.z-aim.prediction.impact.z)<.12,'Throw must land near the displayed blast ring');
   report.checks.push({check:'target selection, adjustable distance, preview accuracy and Space throw',prediction:aim.prediction.impact,...landed});
-  await page.getByRole('button',{name:'Rain: off',exact:true}).click();await page.getByRole('button',{name:'Rain: on',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Rain: on',exact:true}).click();await page.getByRole('button',{name:'Rain: off',exact:true}).waitFor();
-  report.checks.push({check:'visible one-tap rain toggle',passed:true});
+  // rain lives in the Sky menu (the bomb panel no longer duplicates it)
+  await page.locator('#tSky').click();await page.locator('#segWx button[data-v="1"]').click();await page.waitForFunction(()=>window.__pw.play&&document.querySelector('#segWx button[data-v="1"]').getAttribute('aria-pressed')==='true');
+  await page.locator('#segWx button[data-v="0"]').click();await page.locator('#tSky').click();
+  report.checks.push({check:'rain toggles from the Sky menu while walking',passed:true});
   // A known vertex and tree keep damage checks independent of the throw's aim.
   const damage=await page.evaluate(()=>{
     const p=window.__pw,W=p.W,s=p.snapshot(),n=Math.round(Math.sqrt(s.height.length)),grid=n-1,cell=16/grid;

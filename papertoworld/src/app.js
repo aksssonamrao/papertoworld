@@ -328,7 +328,7 @@ setSph(drawPose());
 function blur(src,r){const a=new Float32Array(G*G),b=new Float32Array(G*G);
   for(let z=0;z<G;z++)for(let x=0;x<G;x++){let s=0,n=0;for(let k=-r;k<=r;k++){const xx=x+k;if(xx>=0&&xx<G){s+=src[z*G+xx];n++}}a[z*G+x]=s/n}
   for(let z=0;z<G;z++)for(let x=0;x<G;x++){let s=0,n=0;for(let k=-r;k<=r;k++){const zz=z+k;if(zz>=0&&zz<G){s+=a[zz*G+x];n++}}b[z*G+x]=s/n}return b}
-let worldResources,landscapePlay,changeLandscape,editRefresh=null,pendingWorldEdits=[];
+let worldResources,landscapePlay,changeLandscape,editRefresh=null,pendingWorldEdits=[];const siegeDir=new THREE.Vector3();
 let W=null, instances=[], growT=0, variant=0, lastDrawHash=0;
 const dummy=new THREE.Object3D();
 function colJ(hex,h=.03,s=.1,l=.08){const c=new THREE.Color(hex);c.offsetHSL((R()-.5)*h,(R()-.5)*s,(R()-.5)*l);return c}
@@ -444,6 +444,10 @@ function grow(){
   W.activitySite=QS.get('activities')==='0'?null:choosePaperSite(W,{waterAt,hAt:hRaw,stamps});
   if(W.activitySite){const c=W.activitySite.castle,p=W.activitySite.cannon;
     for(const a of [T,Ho])for(let i=a.length-1;i>=0;i--)if(Math.hypot(a[i].x-c.x,a[i].z-c.z)<1.65||Math.hypot(a[i].x-p.x,a[i].z-p.z)<.45)a.splice(i,1);
+    // the cannon's over-the-shoulder camera sits ~1.9 behind it; keep crowns out of that spot and its sight line to the castle
+    const dl=Math.hypot(c.x-p.x,c.z-p.z)||1,dx=(c.x-p.x)/dl,dz=(c.z-p.z)/dl,ex=p.x-dx*1.9-dz*.55,ez=p.z-dz*1.9+dx*.55,lx=c.x-ex,lz=c.z-ez,l2=lx*lx+lz*lz||1;
+    for(let i=T.length-1;i>=0;i--){const o=T[i],u=clamp(((o.x-ex)*lx+(o.z-ez)*lz)/l2,0,1),rc=.27*(o.s||1);
+      if(Math.hypot(o.x-ex,o.z-ez)<.8+rc||Math.hypot(o.x-ex-lx*u,o.z-ez-lz*u)<.3+rc)T.splice(i,1)}
   }
   const mk=(geo,mat,arr,shadow=true,colKey='c')=>{const m=new THREE.InstancedMesh(geo,mat,Math.max(1,arr.length));m.count=arr.length;m.frustumCulled=false;m.castShadow=shadow;m.receiveShadow=true;
     arr.forEach((o,k)=>{if(o[colKey])m.setColorAt(k,o[colKey]);dummy.position.set(o.x,o.y,o.z);dummy.scale.setScalar(1e-4);dummy.updateMatrix();m.setMatrixAt(k,dummy.matrix)});if(colKey!=='none'&&!m.instanceColor)m.setColorAt(0,new THREE.Color(1,1,1));scene.add(m);instances.push(m);return m};
@@ -1062,7 +1066,7 @@ canvas.addEventListener('pointermove',e=>{if(!isT(e))onMove(e)});
 ['pointerup','pointercancel'].forEach(ev=>canvas.addEventListener(ev,e=>{if(!isT(e))up(e)}));
 if(!window.PointerEvent){const mp=e=>({pointerId:'m',clientX:e.clientX,clientY:e.clientY,pointerType:'mouse',isPrimary:true});
   canvas.addEventListener('mousedown',e=>onDown(mp(e)));addEventListener('mousemove',e=>onMove(mp(e)));addEventListener('mouseup',e=>up(mp(e)))}
-canvas.addEventListener('wheel',e=>{if(mode==='view'||mode==='map'){e.preventDefault();sph.r=clamp(sph.r*(1+e.deltaY*.001),4,70)}else if(mode==='walk'){e.preventDefault();heroS.dist=clamp(heroS.dist*(1+e.deltaY*.0012),.2,1.5)}},{passive:false});
+canvas.addEventListener('wheel',e=>{if(mode==='view'||mode==='map'){e.preventDefault();sph.r=clamp(sph.r*(1+e.deltaY*.001),4,70)}else if(mode==='walk'){e.preventDefault();heroS.dist=clamp(heroS.dist*(1+e.deltaY*.0012),.2,1.5)}else if(mode==='siege'){e.preventDefault();landscapePlay?.wheel(e)}},{passive:false});
 addEventListener('keydown',e=>{if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName||'')||e.target?.isContentEditable)return;if(landscapePlay?.key(e,true))return;keys[e.code]=true;if(e.code==='KeyV'&&mode==='walk')$('#tCam').click();if(e.code==='KeyM'){if(mode==='walk')enterMap();else if(mode==='map')leaveMap(false)}});addEventListener('keyup',e=>{landscapePlay?.key(e,false);keys[e.code]=false});
 addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
 
@@ -1469,6 +1473,7 @@ function frame(){requestAnimationFrame(frame);if(ctxGone)return;const frameDelta
     camera.fov=lerp(tween.f0,tween.f1,k);camera.updateProjectionMatrix();camera.lookAt(tween.cur);lastLook.copy(tween.cur);
     if(tween.t>=1){const d=tween.done;tween=null;d&&d()}}
   else if(mode==='walk'){heroCamPose(camWant,fwdV);if(heroS.fp){camera.position.copy(camWant);camLookS.copy(fwdV)}else{camera.position.lerp(camWant,1-Math.exp(-dt*7));camLookS.lerp(fwdV,1-Math.exp(-dt*16))}camera.lookAt(camLookS);lastLook.copy(camLookS)}
+  else if(mode==='siege'){camera.getWorldDirection(siegeDir);lastLook.copy(camera.position).addScaledVector(siegeDir,3)} // Paper Siege owns the camera
   else{if(mode==='map'){sph.theta+=0}if(cine&&mode==='view'){sph.theta+=dt*.07;sph.phi=clamp(.95+Math.sin(et*.13)*.22,.3,1.3);sph.r=lerp(sph.r,viewPose().r*(.72+Math.sin(et*.09)*.12),dt*.3)}
     sphPos(sph,camera.position);camera.lookAt(sph.target);lastLook.copy(sph.target)}
   if(water.visible){waterU.uTime.value=et;waterU.uSky.value.copy(scene.background);waterU.uSunDir.value.copy(sunDir);waterU.uSunK.value=clamp(sun.intensity/(1.3*LU))*(1-sky.night*.75);if(season==='winter')water.material.color.setHSL(.54,.28,.8*(1-sky.night*.55));else water.material.color.setHSL(.56,.42,(.3+Math.sin(et*.8)*.015)*(1-sky.night*.5));if(growT>=6.5)water.material.opacity=waterOp()}
@@ -1481,7 +1486,7 @@ function frame(){requestAnimationFrame(frame);if(ctxGone)return;const frameDelta
   sun.shadow.needsUpdate=++shTick%(mode==='draw'&&!tween&&!W?8:2)===0||photoReq||!!rec;
   // near plane follows the viewing distance: from far away a fixed 0.01 leaves too little depth precision and the
   // paper z-fights with the sheet beneath it (stripes on narrow screens)
-  const nearW=mode==='walk'?.01:clamp(camera.position.distanceTo(lastLook)*.02,.01,1.5);if(Math.abs(nearW-camera.near)>camera.near*.05){camera.near=nearW;camera.updateProjectionMatrix()}
+  const nearW=mode==='walk'||mode==='siege'?.01:clamp(camera.position.distanceTo(lastLook)*.02,.01,1.5);if(Math.abs(nearW-camera.near)>camera.near*.05){camera.near=nearW;camera.updateProjectionMatrix()}
   // a point light costs every lit pixel, even at zero intensity: only keep the ones that are glowing
   campLight.visible=campLight.intensity>.02*PLU;heroLight.visible=heroLight.intensity>.02*PLU;
   // calm paper: after a few seconds without input only the dust motes drift, so draw every other frame and save battery
@@ -1524,7 +1529,14 @@ if(QS.get('activities')!=='0')landscapePlay=createLandscapePlay({
  THREE,scene,camera,renderer,canvas,C:{PW,HW,G,CELL,WATER_Y},getWorld:()=>W,getMode:()=>mode,getHero:()=>heroS,getSeason:()=>season,getNight:()=>sky.night,getRise:()=>rise,
  hAt,waterAt,typeAt,hitObst,pickTarget:groundAt,getRain:()=>sky.rainT>.5,setRain:on=>setWx(on?1:0),heights:()=>({grid:Float32Array.from(Hgrid,h=>h*rise),n:G+1,size:PW}),sunDir,
  audio:{ensure:ensureAudio,pluck,burst,get ctx(){return AC},get out(){return master},get muted(){return muted}},
- onImpact:event=>changeLandscape(event),toast,setHint
+ onImpact:event=>changeLandscape(event),toast,setHint,
+ // manning the cannon: the wanderer stands beside it facing the castle while Paper Siege drives the camera
+ enterSiege(site){if(mode!=='walk')return false;const c=site.cannon,k=site.castle,l=Math.hypot(k.x-c.x,k.z-c.z)||1,dx=(k.x-c.x)/l,dz=(k.z-c.z)/l;
+  mode='siege';joyEnd();look=null;pinch0=0;heroS.path=null;showPath(null);marker.visible=false;heroS.vx=heroS.vz=heroS.sp=0;
+  heroS.x=c.x+dz*.34-dx*.06;heroS.z=c.z-dx*.34-dz*.06;heroS.y=hAt(heroS.x,heroS.z);heroS.camYaw=Math.atan2(-dx,-dz);heroS.face=heroS.camYaw+Math.PI;heroS.camPitch=.28;
+  document.body.classList.remove('walking');$('#hint').classList.add('fade');showUI();return true},
+ leaveSiege(){if(mode!=='siege')return;if(insideObst(heroS.x,heroS.z)){const [x,z]=nearestFree(heroS.x,heroS.z);heroS.x=x;heroS.z=z;heroS.y=hAt(x,z)}
+  mode='flying';showUI();enterWalkCam(()=>{mode='walk';showUI();document.body.classList.add('walking')})}
 });
 
 frame();

@@ -4,7 +4,8 @@ import { createPointCloud } from '../render/materials.js';
 
 /** Shared-scene port of local main 24acb1c; no registry, extra renderer, or world mutation. */
 export function createPaperSiege(THREE) {
-let STEP=1/120,ITER=22,TOL=1e-5,FR=true,ADAPT=22;const S=10,GRAV=26,TAU=Math.PI*2,DEG=Math.PI/180;
+let STEP=1/120,ITER=22,TOL=1e-5,FR=true,ADAPT=typeof matchMedia==='function'&&matchMedia('(pointer:coarse)').matches?12:22; // phones: a lighter solver while a collapse has many bodies awake
+const S=10,GRAV=26,TAU=Math.PI*2,DEG=Math.PI/180;
 const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t,sm=(a,b,x)=>{const t=clamp((x-a)/(b-a));return t*t*(3-2*t)};
 const mkRng=s=>{s>>>=0;return()=>{s=(s+0x6D2B79F5)>>>0;let t=s;t=Math.imul(t^t>>>15,t|1);t^=t+Math.imul(t^t>>>7,t|61);return((t^t>>>14)>>>0)/4294967296}};
 const BH=.95,TW=1.4,LW=1.4,WT=.8,PLK=.45,CR=1.2,EPS=.004,KH=.5,KW=.26; // block height, tower width, wall block length, wall thickness, plank thickness, stacking gap, knight half-height and half-width (sim units)
@@ -172,14 +173,21 @@ function start(host){
   const T=host.THREE;g={host,T,dead:false,ready:false,timers:new Set(),pendingImpacts:[],sfxT:0,owned:[],geoC:new Map(),items:[],kill:[],pops:[],state:'load',keys:{},errs:0,ptr:new Map(),zoom:1,save:load(),
     yaw:0,pitch:38*DEG,power:.5,charge:-1,ammo:{stone:0,bomb:0,scatter:0},sel:'stone',score:0,shots:0,ts:1,slow:0,shake:0,camMode:'intro',intro:0,level:1,knLeft:0,wait:0,winT:-1,loseT:-1,watch:0,lastHud:{}};
   const own=o=>{g.owned.push(o);return o};g.own=own;
-  g.root=new T.Group();host.scene.add(g.root);g.hud=buildHud(host);if(host.freeRoam)g.hud.r.style.display='none';const G=g;
+  g.free=!!host.freeRoam;g.root=new T.Group();host.scene.add(g.root);g.hud=buildHud(host);if(g.free)g.hud.r.style.display='none';const G=g;
   return(async()=>{
     const C=await import('../../vendor/cannon-es.0.20.0.js');
     if(G.dead)return;g.C=C;
     setup(host,T,C);g.hud.load.remove();
-    if(!host.freeRoam)bindHud();g.level=host.freeRoam?1:clamp(g.save.max,1,99);loadLevel(g.level);
+    if(!g.free){bindHud();g.bound=true}g.level=clamp(g.save.max,1,99);loadLevel(g.level); // the landscape castle is the next one to beat
     try{await host.renderer.compileAsync(G.root,host.camera,host.scene)}catch(e){}
-    if(G.dead)return;g.ready=true;if(host.freeRoam){g.state='free-roam';g.camMode='free-roam'}else beginIntro(true)})()}
+    if(G.dead)return;g.ready=true;if(g.free){g.state='free-roam';g.camMode='free-roam'}else beginIntro(true)})()}
+/* Manning the cannon: the same castle becomes the full game in place (HUD, intro, aim camera, levels), and rest() hands
+   the camera back to the walk while the castle stays as it was left. */
+function play(){if(!g||!g.ready||g.dead||!g.free)return false;g.free=false;g.hud.r.style.display='';if(!g.bound){bindHud();g.bound=true}
+  hideCard();g.ptr.clear();g.zoom=1;g.cam.init=false;g.level=clamp(g.save.max,1,99);loadLevel(g.level);beginIntro(true);return true}
+function rest(){if(!g||g.dead||g.free)return false;g.free=true;hideCard();g.hud.r.style.display='none';g.hud.banner.classList.remove('on');setHint('');
+  g.charge=-1;g.hud.fire.classList.remove('on');g.slow=0;g.ts=1;g.shake=0;g.ptr.clear();g.keys={};g.dots.visible=false;g.follow=null;
+  if(g.settling)finishSettleNow();g.state='free-roam';g.camMode='free-roam';return true}
 
 function setup(host,T,C){
   const own=g.own,root=g.root,rng=mkRng(7);
@@ -383,6 +391,7 @@ function explode(it){if(it.dead||it.exploded)return;it.exploded=true;const p=it.
   g.glow.add(x,y,z,0,0,0,.3,.4,1.9,rgb('#ffe2a0'),1,0,0);g.glow.add(x,y+.05,z,0,.3,0,.55,.3,1.5,rgb('#ff9a40'),.85,0,0);g.glow.add(x,y,z,0,0,0,.2,1.2,2.4,rgb('#fff3d0'),.5,0,0);
   for(let i=0;i<16;i++){const a=Math.random()*TAU,s=.5+Math.random()*1.1;g.puff.add(x,y,z,Math.cos(a)*s,.3+Math.random()*.9,Math.sin(a)*s,1.1+Math.random()*.8,.1,.34+Math.random()*.2,rgb(i%3?'#6b6257':'#2b2530'),.75,1.3,.1)}
   for(let i=0;i<14;i++){const a=Math.random()*TAU,s=1+Math.random()*2;g.glow.add(x,y,z,Math.cos(a)*s,.8+Math.random()*1.6,Math.sin(a)*s,.4+Math.random()*.4,.05,.01,rgb('#ffc266'),1,2,-1.5)}
+  const fb=g.balls.find(m=>m.u.t>=1)||g.balls[0];fb.u={t:0,x,y,z,r:.42};fb.visible=true;
   confetti(x,y,z,34,'#20263a','#c9a063',.022,6);wakeNear(p,6.5)}
 function dust(x,y,z,k){const n=Math.ceil(2+k*4),wx=g.wind.x*.02,wz=g.wind.z*.02;for(let i=0;i<n;i++){const a=Math.random()*TAU,s=(.1+Math.random()*.3)*k;g.puff.add(x/S,y/S,z/S,Math.cos(a)*s,.08+Math.random()*.2,Math.sin(a)*s,.5+Math.random()*.5,.03+k*.02,.08+k*.08,rgb(Math.random()<.5?'#d8cdb4':'#b9ae96'),.5*k+.2,2.2,.04)}}
 function confetti(x,y,z,n,c1,c2,size,spd){const cf=g.conf,a=rgb(c1),b=rgb(c2),nt=1-g.host.night*.55;for(let i=0;i<n;i++){const p=cf.P[cf.head];cf.head=(cf.head+1)%cf.n;const c=Math.random()<.65?a:b,j=.85+Math.random()*.3;
@@ -405,7 +414,7 @@ function fire(p,type){
   const body=new C.Body({mass:a.mass,shape:new C.Sphere(a.r),material:g.projM,position:new C.Vec3(mp.x*S,mp.y*S,mp.z*S)});body.velocity.set(dir[0]*v,dir[1]*v,dir[2]*v);
   const geo=type==='bomb'?sphereGeo(a.r):icoGeo(a.r),mesh=new T.Mesh(geo,type==='bomb'?M.bomb:type==='scatter'?M.scat:M.ball);mesh.castShadow=true;mesh.position.copy(mp);g.root.add(mesh);
   if(type==='bomb'){const f=new T.Mesh(g.fuseGeo||(g.fuseGeo=g.own(new T.CylinderGeometry(.004,.005,.03,5))),M.fuse);f.position.y=a.r/S*1.05;mesh.add(f)}
-  const it={kind:'proj',type,body,mesh,fuse:type==='bomb'?2.5:0,t:0,trail:0,split:type==='scatter'};addItem(it);it.body.wakeUp();it.ss=false;g.projs.push(it);
+  const it={kind:'proj',type,body,mesh,fuse:type==='bomb'?4:0,t:0,trail:0,split:type==='scatter'};addItem(it);it.body.wakeUp();it.ss=false;g.projs.push(it);
   // recoil, smoke, flash, sound
   g.recoil=1;for(let i=0;i<9;i++){const sp=.25+Math.random()*.5;g.puff.add(mp.x,mp.y,mp.z,dir[0]*sp*.5+(Math.random()-.5)*.25,dir[1]*sp*.5+.1+Math.random()*.2,dir[2]*sp*.5+(Math.random()-.5)*.25,.9+Math.random()*.7,.05,.17+Math.random()*.1,rgb(i%2?'#e7dfcf':'#b5ad9d'),.7,1.4,.12)}
   g.glow.add(mp.x,mp.y,mp.z,0,0,0,.11,.25,.5,rgb('#ffe3a3'),1,0,0);g.shake=Math.max(g.shake,.18);sfx.fire();
@@ -575,9 +584,9 @@ function fxUpdate(dt){
 function update(dt,et){if(!g||!g.ready||g.dead)return;try{tick(dt)}catch(e){if(++g.errs>30)throw e;if(g.errs<4)console.error('[siege]',e)}}
 function tick(dt){
   dt=Math.min(dt,.05);
-  if(g.host.freeRoam){
+  if(g.free){
     if(g.settling)settleTick();else if(g.kill.length||!allAsleep()){stepPhysics(dt);gameLogic(dt,dt)}
-    fxUpdate(dt);return;
+    fxUpdate(dt);flushImpacts();return;
   }
   // slow motion (real-time timer)
   if(g.slow>0){g.slow-=dt;g.ts=lerp(g.ts,.3,1-Math.exp(-dt*14))}else g.ts=lerp(g.ts,1,1-Math.exp(-dt*5));if(Math.abs(g.ts-1)<.01&&g.slow<=0)g.ts=1;
@@ -592,7 +601,8 @@ function tick(dt){
   // trajectory preview while aiming
   const showP=g.state==='aim'&&g.camMode==='aim';g.dots.visible=showP&&g.warmed;if(showP)preview(g.charge>=0?g.charge:g.lastPower);
   fxUpdate(sdt);camUpdate(dt);windArrow();hudText(false);
-  const impacts=g.pendingImpacts.splice(0);for(const impact of impacts){g.host.onImpact(impact);if(!g)return}if(impacts.length)refreshTerrain()}
+  flushImpacts()}
+function flushImpacts(){const impacts=g.pendingImpacts.splice(0);for(const impact of impacts){g.host.onImpact(impact);if(!g)return}if(impacts.length)refreshTerrain()}
 function stop(){
   if(!g||g.dead)return;const G=g;G.dead=true;clearTimeout(G.hintT);for(const id of G.timers)clearTimeout(id);G.timers.clear();
   try{for(const it of G.items)G.root.remove(it.mesh);G.items=[];G.world=null}catch(_){}
@@ -616,7 +626,7 @@ function key(e,down){if(!g)return;const c=e.code;if(c==='Escape'&&down){e.preven
   if(c==='Space'){if(down&&!e.repeat){if(g.state==='flight')splitScatter();else if(g.state==='intro')g.intro=99;else startCharge()}else if(!down)releaseCharge()}
   else if(down){const i=['Digit1','Digit2','Digit3'].indexOf(c);if(i>=0){const kk=['stone','bomb','scatter'][i];if(g.ammo[kk]>0){g.sel=kk;hudText(true);sfx.click()}}}}
 
-const activity={id:'siege',name:'Paper Siege',blurb:'Topple card castles with a paper cannon',start,update,stop,pointerDown:ptrDown,pointerMove:ptrMove,pointerUp:ptrUp,wheel,key,refreshTerrain,applyExternalBlast,projectileHit,hitObstacle,get motionRevision(){return g?.motionRevision||0}};
+const activity={id:'siege',name:'Paper Siege',blurb:'Topple card castles with a paper cannon',start,update,stop,pointerDown:ptrDown,pointerMove:ptrMove,pointerUp:ptrUp,wheel,key,refreshTerrain,applyExternalBlast,projectileHit,hitObstacle,play,rest,get playing(){return !!g&&!g.dead&&!g.free},get motionRevision(){return g?.motionRevision||0}};
 
 /* ?debug: a handle for scripted playtests */
 {const dbgAim=pw=>{const v=speedFor(pw);let best=null;for(let d=8;d<=62;d+=.25){const e=Math.abs(heightAt(v,d*DEG)-g.tgtY);if(!best||e<best.e)best={e,d}}return best.d};

@@ -100,8 +100,6 @@ These use Claude's hosting runtime, so on Vercel they switch off cleanly. Worlds
 | `?optCulling=0` | Disable region selection for comparison |
 | `?activities=0` | Omit the castle and bomb controls for renderer-only benchmarks |
 
-The [renderer comparison](/demos/compare/) includes recorded results and one-at-a-time original/first-Radix/optimized views of matched worlds, with a rain toggle.
-
 ## Browser support and verification
 
 Windows Chrome has been exercised on both actual WebGPU and WebGL2 backends. The suite covers all eight themes, mouse painting and stamps, regeneration, detail changes, seasons/weather, walking, share-link reconstruction, portrait resize, postcards, recording and world teardown. Physical mobile devices, Safari and Firefox still need separate validation before making broad support or performance claims.

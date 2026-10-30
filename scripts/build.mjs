@@ -11,9 +11,9 @@ export async function buildApp({ clean = true } = {}) {
   for (const name of ['models', 'vendor', 'classic.html', 'og-image.png']) {
     await cp(path.join(source, name), path.join(destination, name), { recursive: true });
   }
-  // Optional recorded demos ship as static files alongside the app.
-  try { await cp(path.join(source, 'demos'), path.join(destination, 'demos'), { recursive: true }); }
-  catch (error) { if (error.code !== 'ENOENT') throw error; }
+  // papertoworld/demos (the renderer comparison) is local-only and never ships.
+  // Serve it locally with: PAPERWORLD_STATIC_ROOT=papertoworld node serve.mjs
+  await rm(path.join(destination, 'demos'), { recursive: true, force: true });
   const common = {
     bundle: true, format: 'esm', target: 'es2022', minify: true,
     sourcemap: process.env.PAPERWORLD_SOURCEMAPS === '1' ? 'external' : false,

@@ -20,7 +20,7 @@ export function createLandscapePlay(host) {
 .pw-landscape-play{position:fixed;inset:0;z-index:35;pointer-events:none;color:var(--ink,#342b28);font-family:var(--sans,system-ui)}
 .pw-landscape-tools{position:absolute;right:14px;bottom:calc(env(safe-area-inset-bottom,0px) + 94px);display:flex;align-items:flex-end;flex-direction:column;gap:7px;max-width:min(290px,calc(100% - 28px))}
 .pw-landscape-tools button{pointer-events:auto;appearance:none;cursor:pointer;border:1px solid var(--line,#bdac89);border-radius:12px;background:var(--panel,#f4ead8);color:inherit;font:500 13px var(--sans,system-ui);padding:10px 14px;box-shadow:0 2px 12px #0002}
-.pw-landscape-tools .pw-compare{pointer-events:auto;color:inherit;font-size:12px;text-decoration:underline;padding:5px 2px}.pw-landscape-tools [data-action=throw]{background:var(--brass,#c9a063);color:var(--onbrass,#2c231e);font-size:15px;min-height:48px;min-width:160px}
+.pw-landscape-tools [data-action=throw]{background:var(--brass,#c9a063);color:var(--onbrass,#2c231e);font-size:15px;min-height:48px;min-width:160px}
 .pw-landscape-tools button[aria-pressed=true]{background:var(--brass,#c9a063);color:var(--onbrass,#2c231e)}
 .pw-landscape-tools button:focus-visible{outline:3px solid var(--brass,#c9a063);outline-offset:3px}
 .pw-landscape-tools button:disabled{opacity:.55;cursor:default}
@@ -31,12 +31,16 @@ export function createLandscapePlay(host) {
 .pw-bomb-aim button{width:100%;min-height:44px}.pw-bomb-aim [data-action=ahead]{margin-top:6px;background:transparent;font-size:12px;padding:7px}
 @media(max-width:600px){.pw-landscape-tools{bottom:calc(env(safe-area-inset-bottom,0px) + 82px);gap:5px}.pw-bomb-aim{width:216px;padding:10px}.pw-landscape-tools p{max-width:200px}}
 .pw-landscape-tools p{margin:0;padding:5px 8px;border-radius:7px;background:var(--panel,#f4ead8);font-size:11px;line-height:1.4;opacity:.9}
-.pw-landscape-play [hidden]{display:none!important}.pw-siege-hud{display:none}
-</style><div class="pw-landscape-tools" hidden><p data-status hidden></p><button type="button" data-action="throw" aria-label="Throw paper bomb">Throw bomb</button><button type="button" data-action="bomb" aria-pressed="false" aria-expanded="false">Aim / distance</button><button type="button" data-action="rain" aria-pressed="false">Rain: off</button><a href="/demos/compare/" class="pw-compare" target="_blank" rel="noopener">Compare renderers</a><div class="pw-bomb-aim" hidden><label for="pw-bomb-distance">Throw distance <output data-distance>3</output></label><input id="pw-bomb-distance" type="range" min="0.5" max="6" step="0.25" value="3" aria-label="Throw distance"><div data-aim role="status" aria-live="polite"></div><button type="button" data-action="ahead">Aim ahead</button></div><p data-hint hidden>Click or tap the landscape to choose a spot.<br>Then use Throw bomb. Drag to look.</p></div><div class="pw-siege-hud" hidden></div>`;
+.pw-landscape-play [hidden]{display:none!important}.pw-siege-hud{position:absolute;inset:0;pointer-events:none}
+.pw-cannon{position:absolute;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 22px);transform:translateX(-50%);pointer-events:auto;appearance:none;cursor:pointer;min-height:52px;padding:12px 22px;border:1px solid var(--brass,#c9a063);border-radius:26px;background:var(--brass,#c9a063);color:var(--onbrass,#2c231e);font:600 15px var(--sans,system-ui);box-shadow:0 4px 18px #0004;white-space:nowrap;touch-action:manipulation}
+.pw-cannon small{font-weight:500;opacity:.7;margin-left:6px}@media(pointer:coarse){.pw-cannon small{display:none}}
+@media(max-width:600px){.pw-landscape-tools [data-hint]{display:none}.pw-landscape-tools [data-action=throw]{min-width:132px}}
+</style><div class="pw-landscape-tools" hidden><p data-status hidden></p><button type="button" data-action="throw" aria-label="Throw paper bomb">Throw bomb</button><button type="button" data-action="bomb" aria-pressed="false" aria-expanded="false">Aim / distance</button><button type="button" data-action="rain" aria-pressed="false" hidden>Rain: off</button><div class="pw-bomb-aim" hidden><label for="pw-bomb-distance">Throw distance <output data-distance>3</output></label><input id="pw-bomb-distance" type="range" min="0.5" max="6" step="0.25" value="3" aria-label="Throw distance"><div data-aim role="status" aria-live="polite"></div><button type="button" data-action="ahead">Aim ahead</button></div><p data-hint hidden>Click or tap the landscape to choose a spot.<br>Then use Throw bomb. Drag to look.</p></div><div class="pw-siege-hud" hidden></div><button type="button" class="pw-cannon" data-action="cannon" hidden>Man the cannon<small>E</small></button>`;
   document.body.append(ui);
   const panel = ui.querySelector('.pw-landscape-tools'), siegeHud = ui.querySelector('.pw-siege-hud');
   const bombButton = ui.querySelector('[data-action="bomb"]'), throwButton = ui.querySelector('[data-action="throw"]');
-  const hint = ui.querySelector('[data-hint]'), status = ui.querySelector('[data-status]');
+  const hint = ui.querySelector('[data-hint]'), status = ui.querySelector('[data-status]'), cannonButton = ui.querySelector('[data-action="cannon"]');
+  const siegePtrs = new Map(); // pointers routed to Paper Siege while the cannon is manned: dx/dy and tap detection
   panel.append(bombButton,throwButton); // Keep the primary button in a stable place as aim controls expand.
   const aimPanel=ui.querySelector('.pw-bomb-aim'),range=ui.querySelector('input'),distanceLabel=ui.querySelector('[data-distance]'),aimLabel=ui.querySelector('[data-aim]'),aheadButton=ui.querySelector('[data-action="ahead"]'),rainButton=ui.querySelector('[data-action="rain"]');
   const bombs = createWorldBombs({ THREE, scene, camera, hAt: host.hAt, isWater, surfaceY, audio: host.audio,
@@ -83,21 +87,32 @@ export function createLandscapePlay(host) {
     get world() { return host.getWorld(); }, get season() { return host.getSeason(); },
     get night() { return host.getNight(); }, get rise() { return host.getRise?.() ?? 1; },
     get activitySite() { return site; }, get tweening() { return false; },
-    toast: host.toast, setHint: host.setHint, onImpact: event => host.onImpact?.(event), exit() {},
+    toast: host.toast, setHint: host.setHint, onImpact: event => host.onImpact?.(event), exit() { leaveCannon(); },
   };
   let lastUI = '';
   function updateUI() {
     if (disposed) return;
-    const walking = mode() === 'walk', targets = host.getWorld()?.impacts?.length||0,rain=!!host.getRain?.();
-    const signature = `${walking}|${bombs.equipped}|${ready}|${targets}|${rain}`;
+    const walking = mode() === 'walk', playing = siege.playing, targets = host.getWorld()?.impacts?.length||0,rain=!!host.getRain?.(),near=walking&&nearCannon();
+    const signature = `${walking}|${playing}|${near}|${bombs.equipped}|${ready}|${targets}|${rain}`;
     if(signature === lastUI)return; lastUI = signature;
-    ui.hidden = !walking; panel.hidden = !walking;
+    ui.hidden = !walking&&!playing; panel.hidden = !walking; siegeHud.hidden = !playing; cannonButton.hidden = !near; if (near) document.getElementById('hint')?.classList.add('fade'); // the walk hint shares the bottom edge
     bombButton.setAttribute('aria-pressed', String(bombs.equipped));
     bombButton.setAttribute('aria-expanded',String(bombs.equipped));
     aimPanel.hidden = !walking || !bombs.equipped; hint.hidden = !walking;hint.innerHTML=bombs.equipped?'Click or tap a spot, then Throw bomb.<br>Drag to look. The ring shows the blast area.':'Throw ahead, or use Aim / distance to choose a spot.';
     bombButton.textContent=bombs.equipped?'Hide aim':'Aim / distance';
     status.hidden=!targets;status.textContent=targets>=64?'64 changes saved · Regrow for fresh terrain':`${targets} landscape change${targets===1?'':'s'}`;
     rainButton.setAttribute('aria-pressed',String(rain));rainButton.textContent=rain?'Rain: on':'Rain: off';
+  }
+  // the prompt shows when the wanderer is beside the cannon and the castle is ready
+  function nearCannon() { const h = hero(); return !!(ready && site && h && Math.hypot(h.x - site.cannon.x, h.z - site.cannon.z) < .8); }
+  function enterCannon() {
+    if (disposed || !ready || siege.playing || mode() !== 'walk' || !host.enterSiege?.(site)) return false;
+    bombs.setEquipped(false); selected = null; arc.visible = ring.visible = false; siegePtrs.clear();
+    siege.play(); updateUI(); return true;
+  }
+  function leaveCannon() {
+    if (!siege.playing) return false;
+    siege.rest(); siegePtrs.clear(); host.leaveSiege?.(); updateUI(); return true;
   }
   function equip(value) { if (disposed || mode() !== 'walk') return false; bombs.setEquipped(value);selected=null;aimKey='';updateUI();refreshAim(true);return true; }
   function throwBomb() {
@@ -141,14 +156,16 @@ export function createLandscapePlay(host) {
     add(new THREE.PlaneGeometry(.22, .13), ink, c.x + .49, ground + .52, c.z);
     scene.add(marker); return startSiege();
   }
-  function clear() { stopSiege(); site = null; pointers.clear();selected=null;prediction=null;aimKey=''; bombs.clear(); bombs.setEquipped(false);arc.visible=ring.visible=false; removeMarker(); updateUI(); }
+  function clear() { if (siege.playing) { siege.rest(); host.leaveSiege?.(); } stopSiege(); site = null; pointers.clear();selected=null;prediction=null;aimKey=''; bombs.clear(); bombs.setEquipped(false);arc.visible=ring.visible=false; removeMarker(); updateUI(); }
   function update(dt, et) { if (disposed) return; bombs.update(dt); if (ready) siege.update(dt, et); updateUI();refreshAim();throwButton.disabled=bombs.debug.stats.projectiles>=6||(bombs.equipped&&!prediction?.valid); }
   function pointerDown(event) {
     if (disposed) return false;
+    if (siege.playing) { siegePtrs.set(event.pointerId, { x: event.clientX, y: event.clientY, x0: event.clientX, y0: event.clientY, t0: performance.now() }); siege.pointerDown(event); return true; }
     if (mode() === 'walk' && bombs.equipped&&!(event.pointerType==='touch'&&event.clientX<innerWidth*.45)) pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
     return false; // The existing walk camera still receives its normal gestures.
   }
   function pointerMove(event) {
+    if (!disposed && siege.playing) { const p = siegePtrs.get(event.pointerId); if (!p) return false; const dx = event.clientX - p.x, dy = event.clientY - p.y; p.x = event.clientX; p.y = event.clientY; siege.pointerMove(event, dx, dy); return true; }
     if(disposed||mode()!=='walk'||!bombs.equipped)return false;
     const start=pointers.get(event.pointerId);
     if(start){if(Math.hypot(event.clientX-start.x,event.clientY-start.y)>7){selected=null;aimKey=''}return false}
@@ -156,17 +173,20 @@ export function createLandscapePlay(host) {
   }
   function pointerUp(event, tap) {
     if (disposed) return false;
+    if (siege.playing) { const p = siegePtrs.get(event.pointerId); siegePtrs.delete(event.pointerId); siege.pointerUp(event, !!p && Math.hypot(event.clientX - p.x0, event.clientY - p.y0) < 10 && performance.now() - p.t0 < 400); return true; }
     const start = pointers.get(event.pointerId); pointers.delete(event.pointerId);
     if (mode() !== 'walk' || !bombs.equipped || event.type === 'pointercancel' || (event.button != null && event.button !== 0)) return false;
     const isTap = typeof tap === 'boolean' ? tap : start && Math.hypot(event.clientX - start.x, event.clientY - start.y) < 7;
     if (!start||!isTap||pointers.size) return false;pick(event.clientX,event.clientY);refreshAim(true);return true;
   }
-  function wheel() { return false; }
+  function wheel(event) { if (disposed || !siege.playing) return false; siege.wheel(event); return true; }
   function key(event, down = true) {
+    if (!disposed && siege.playing) { siege.key(event, down); return true; }
     if (disposed || mode() !== 'walk' || event.metaKey || event.ctrlKey || event.altKey) return false;
     const target = event.target;
     if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) return false;
-    const code = event.code || ({ b: 'KeyB', Escape: 'Escape' })[event.key];
+    const code = event.code || ({ b: 'KeyB', e: 'KeyE', Escape: 'Escape' })[event.key];
+    if (code === 'KeyE' && nearCannon()) { if (down && !event.repeat) enterCannon(); event.preventDefault(); return true; }
     if (code === 'KeyB') { if (down && !event.repeat) equip(!bombs.equipped); event.preventDefault(); return true; }
     if (code === 'Escape' && bombs.equipped) { if (down) equip(false); event.preventDefault(); return true; }
     if(code==='Space'&&/^(BUTTON|A)$/.test(target?.tagName||''))return false;
@@ -177,11 +197,12 @@ export function createLandscapePlay(host) {
   rainButton.addEventListener('click',()=>{host.setRain?.(!host.getRain?.());updateUI()});
   range.addEventListener('input',()=>{distance=Number(range.value);distanceLabel.textContent=String(distance);selected=null;aimKey='';refreshAim(true)});
   aheadButton.addEventListener('click',()=>{selected=null;aimKey='';refreshAim(true)});
-  for (const control of [bombButton,throwButton,rainButton,aimPanel]) control.addEventListener('pointerdown', event => event.stopPropagation());
+  cannonButton.addEventListener('click', () => enterCannon());
+  for (const control of [bombButton,throwButton,rainButton,aimPanel,cannonButton]) control.addEventListener('pointerdown', event => event.stopPropagation());
   function dispose() { if (disposed) return; clear(); disposed = true; bombs.dispose();scene.remove(arc,ring);for(const resource of[arcGeometry,arcMaterial,ringGeometry,ringMaterial])resource.dispose(); ui.remove(); }
   updateUI();
   return {
-    build, clear, update, pointerDown, pointerMove, pointerUp, wheel, key, startSiege, stopSiege, dispose,
+    build, clear, update, enterCannon, leaveCannon, get playing() { return siege.playing; }, pointerDown, pointerMove, pointerUp, wheel, key, startSiege, stopSiege, dispose,
     hitObstacle: (x,z,pad=.02) => siege.hitObstacle(x,z,pad),
     get equipped() { return bombs.equipped; }, get bombTool() { return bombs; }, get siege() { return siege; }, get site() { return site; },
     debug: { get ready() { return ready; }, get loading() { return loading; }, get stats() { return bombs.debug.stats; },
