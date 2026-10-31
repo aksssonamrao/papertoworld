@@ -40,7 +40,7 @@ for(const [name,device] of Object.entries(devices)){
     await page.evaluate(()=>window.__pw.enterWalk());await page.waitForFunction(()=>window.__pw.mode==='walk');
     run.perf.walk=await frames(page,3000);
     // far from the cannon: no prompt
-    assert.equal(await page.locator('.pw-cannon').isVisible(),false);
+    assert.equal(await page.locator('.pw-act button.main').isVisible(),false);
     if(!device.hasTouch){ // laptop: right-click throws there; B aims with the mouse and a click throws; F/Space throw
       const vp=device.viewport,thrown=()=>page.evaluate(()=>window.__pw.play.bombTool.debug.stats.thrown),n0=await thrown();
       await page.mouse.click(vp.width*.5,vp.height*.42,{button:'right'});await page.waitForFunction(n=>window.__pw.play.bombTool.debug.stats.thrown>n,n0,{timeout:5000});
@@ -55,12 +55,12 @@ for(const [name,device] of Object.entries(devices)){
       await page.waitForTimeout(2500);
     }
     await page.evaluate(()=>{const p=window.__pw,c=p.W.activitySite.cannon,k=p.W.activitySite.castle,l=Math.hypot(k.x-c.x,k.z-c.z);p.teleport(c.x-(k.x-c.x)/l*.55,c.z-(k.z-c.z)/l*.55)});
-    await page.locator('.pw-cannon').waitFor({state:'visible'});await page.waitForTimeout(600);await shot('01-walk-near-cannon');
-    const vp=device.viewport,prompt=await box(page,'.pw-cannon'),throwB=await box(page,'[data-action="throw"]');
-    assert(within(prompt,vp),'cannon prompt fits on screen');assert(!overlap(prompt,throwB),'cannon prompt clear of Throw bomb');
+    await page.locator('.pw-act button.main').waitFor({state:'visible'});await page.waitForTimeout(600);await shot('01-walk-near-cannon');
+    const vp=device.viewport,prompt=await box(page,'.pw-act button.main'),throwB=await box(page,'[data-action="throw"]');
+    assert(within(prompt,vp),'cannon prompt fits on screen');assert(!overlap(prompt,throwB),'cannon prompt clear of Throw bomb '+JSON.stringify({prompt,throwB}));
     assert(prompt.height>=44,'cannon prompt is a comfortable touch target');
     run.checks.push({check:'prompt appears beside the cannon',prompt,throwB});
-    await tap('.pw-cannon');
+    await tap('.pw-act button.main');
     await page.waitForFunction(()=>window.__pw.mode==='siege'&&window.__pw.play.siege.debug?.state==='intro');
     await page.waitForTimeout(1200);await shot('02-intro');
     await page.waitForFunction(()=>window.__pw.play.siege.debug.state==='aim');await page.waitForTimeout(700);await shot('03-aim');

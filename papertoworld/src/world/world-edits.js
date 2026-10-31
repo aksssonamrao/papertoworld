@@ -34,7 +34,10 @@ export function createWorldEdits(host) {
     for(const o of W.trees){const gone=damaged(o);o.y=hAt(o.x,o.z)-.01;
       place(W.inst.poles,o.pi,o,gone?.00001:o.s,gone?.00001:o.tall?o.s*o.tall:.00001,gone?.00001:o.s);
       place(o.fm,o.fi,o,gone?.00001:o.s);}
-    W.houses.forEach((o,i)=>{const gone=damaged(o);o.y=hAt(o.x,o.z);for(const m of[W.inst.walls,W.inst.roofs,W.inst.wins])place(m,i,o,gone?.00001:.2*o.s);if(gone)host.glows.geometry.attributes.alpha.setX(o.glow,0);else host.glows.geometry.attributes.position.setY(o.glow,o.y+.08*o.s)});
+    // walk-in houses (o.big) are built at real size with furniture; host.houseScale gives their instance scale
+    const houseK=o=>host.houseScale?host.houseScale(o):.2*o.s,glowY=o=>o.big?.16*o.s:.08*o.s;
+    W.houses.forEach((o,i)=>{const gone=damaged(o);o.y=hAt(o.x,o.z);for(const m of[W.inst.walls,W.inst.roofs,W.inst.wins,W.inst.furn,W.inst.cloth])if(m)place(m,i,o,gone?.00001:houseK(o));
+      for(const g of[o.glow,o.glow2]){if(g===undefined)continue;if(gone)host.glows.geometry.attributes.alpha.setX(g,0);else host.glows.geometry.attributes.position.setY(g,o.y+(g===o.glow2?.05*o.s:glowY(o)))}});
     W.lanterns.forEach((o,i)=>{const gone=damaged(o);o.y=hAt(o.x,o.z);for(const m of[W.inst.posts,W.inst.heads])place(m,i,o,gone?.00001:1);if(gone)host.glows.geometry.attributes.alpha.setX(o.glow,0);else host.glows.geometry.attributes.position.setY(o.glow,o.y+.18)});
     for(const [group,[m,arr,,ys]]of W.grass.entries())arr.forEach((o,i)=>{const gone=damaged(o);o.y=group===3?waterY+.012:hAt(o.x,o.z);place(m,i,o,gone?.00001:o.s,gone?.00001:o.s*ys,gone?.00001:o.s)});
     for(const o of W.props){damaged(o);o.y=hAt(o.x,o.z);o.g.position.y=o.y;o.g.visible=!o.destroyed;if(o.glow!==undefined){if(o.destroyed)host.glows.geometry.attributes.alpha.setX(o.glow,0);else host.glows.geometry.attributes.position.setY(o.glow,o.y+(o.glowY||0))}}
@@ -55,7 +58,7 @@ export function createWorldEdits(host) {
     }
     obstacles.clear();
     for(const o of W.trees)if(!o.destroyed)addObstacle(o.x,o.z,.02+o.s*.02);
-    for(const o of W.houses)if(!o.destroyed)addObstacle(o.x,o.z,.13*o.s);
+    for(const o of W.houses)if(!o.destroyed){if(host.addHouse)host.addHouse(o);else addObstacle(o.x,o.z,.13*o.s)}
     for(const o of W.lanterns)if(!o.destroyed)addObstacle(o.x,o.z,.02);
     for(const o of W.props)if(!o.destroyed)addObstacle(o.x,o.z,o.r);
     host.changed();return true;

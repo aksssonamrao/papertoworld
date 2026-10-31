@@ -6,6 +6,8 @@ import { createWaterMaterial, createPointCloud, createBillboardPoints, dressMate
 import { pigmentSurface, tiledRoof } from './render/surfaces.js';
 import { createLandscapePlay } from './activities/landscape-play.js';
 import { choosePaperSite,createWorldEdits } from './world/world-edits.js';
+import { createInteractions } from './activities/interactions.js';
+import { enlargeHouses, houseGeometries, wallBoxes, houseLayout, toWorld as houseToWorld } from './world/houses.js';
 import { WorldResources } from './render/resources.js';
 import { LivingWorldSplats } from './render/splats/scene.js';
 const THREE = { ...Three, GLTFLoader, SkeletonUtils,
@@ -169,13 +171,12 @@ const geoTuft=(()=>{const a=[];for(let k=0;k<3;k++){const an=k*2.1+.3,c=Math.cos
   a.push(-w*c,0,-w*s, w*c,0,w*s, l*s,h,-l*c)}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.BufferAttribute(new Float32Array(a),3));g.computeVertexNormals();return g})();
 const geoFlower=ni(new THREE.IcosahedronGeometry(.009,0)).translate(0,.05,0);
 const geoRock=ni(new THREE.DodecahedronGeometry(.045,0));
-const geoWalls=merge([ni(new THREE.BoxGeometry(1,.7,.8)).translate(0,.35,0),ni(new THREE.BoxGeometry(.14,.4,.14)).translate(.28,.85,.14),ni(new THREE.BoxGeometry(.22,.4,.04)).translate(-.18,.2,.41)]);
-const geoRoof=(()=>{const L=.58,w=.5,h=.42,y=.7;const A=[-L,y,-w],B=[L,y,-w],C=[L,y,w],D=[-L,y,w],E=[-L,y+h,0],F=[L,y+h,0];
-  const g=tri([A,F,B,A,E,F,D,C,F,D,F,E,A,D,E,B,F,C]);g.computeVertexNormals();return g})();
-const geoWin=merge([ni(new THREE.BoxGeometry(.18,.16,.02)).translate(.2,.4,.405),ni(new THREE.BoxGeometry(.02,.16,.18)).translate(.505,.4,-.1),ni(new THREE.BoxGeometry(.02,.16,.18)).translate(-.505,.4,.1)]);
 const geoPost=merge([ni(new THREE.CylinderGeometry(.006,.008,.16,5)).translate(0,.08,0),ni(new THREE.BoxGeometry(.03,.006,.03)).translate(0,.2,0)]);
 const geoPlank=merge([0,1,2].map(k=>ni(new THREE.BoxGeometry(CELL*1.2,.012,CELL*.3)).translate(0,0,(k-1)*CELL*.36)));
 const geoLampHead=ni(new THREE.BoxGeometry(.022,.03,.022)).translate(0,.18,0);
+// village houses big enough to step into (src/world/houses.js): hollow walls with a door gap, roof + chimney, windows, furniture, bedding
+const HG=houseGeometries(THREE);
+const matFurn=new THREE.MeshStandardMaterial({color:'#8a6a48',roughness:.9,flatShading:true}),matCloth=new THREE.MeshStandardMaterial({color:'#c96b4a',roughness:.95,flatShading:true});
 const matFol=new THREE.MeshStandardMaterial({color:'#fff',flatShading:true,roughness:.85});
 const matPole=new THREE.MeshStandardMaterial({color:'#fff',roughness:1});
 const matGrass=new THREE.MeshStandardMaterial({color:'#fff',side:THREE.DoubleSide,roughness:.9});
@@ -328,20 +329,30 @@ setSph(drawPose());
 function blur(src,r){const a=new Float32Array(G*G),b=new Float32Array(G*G);
   for(let z=0;z<G;z++)for(let x=0;x<G;x++){let s=0,n=0;for(let k=-r;k<=r;k++){const xx=x+k;if(xx>=0&&xx<G){s+=src[z*G+xx];n++}}a[z*G+x]=s/n}
   for(let z=0;z<G;z++)for(let x=0;x<G;x++){let s=0,n=0;for(let k=-r;k<=r;k++){const zz=z+k;if(zz>=0&&zz<G){s+=a[zz*G+x];n++}}b[z*G+x]=s/n}return b}
-let worldResources,landscapePlay,changeLandscape,editRefresh=null,pendingWorldEdits=[];const siegeDir=new THREE.Vector3();
+let worldResources,landscapePlay,interact=null,changeLandscape,editRefresh=null,pendingWorldEdits=[];const siegeDir=new THREE.Vector3();
 let W=null, instances=[], growT=0, variant=0, lastDrawHash=0;
 const dummy=new THREE.Object3D();
 function colJ(hex,h=.03,s=.1,l=.08){const c=new THREE.Color(hex);c.offsetHSL((R()-.5)*h,(R()-.5)*s,(R()-.5)*l);return c}
 const obst=new Map();
 function addObst(x,z,r){const k=((x+HW)/.25|0)+','+((z+HW)/.25|0);(obst.get(k)||obst.set(k,[]).get(k)).push({x,z,r})}
-function hitObst(x,z,pad){if(landscapePlay?.hitObstacle(x,z,pad))return true;const kx=(x+HW)/.25|0,kz=(z+HW)/.25|0;for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const l=obst.get((kx+a)+','+(kz+b));if(l)for(const o of l)if(Math.hypot(o.x-x,o.z-z)<o.r+pad)return true}return false}
+// an oriented box (a house wall): registered in every .25 bucket its bounding circle touches, so lookups stay 3x3
+function addObstBox(x,z,hx,hz,rot){const o={x,z,r:Math.hypot(hx,hz),box:[hx,hz,Math.cos(rot),Math.sin(rot)]};
+  for(let kx=(x-o.r+HW)/.25|0;kx<=((x+o.r+HW)/.25|0);kx++)for(let kz=(z-o.r+HW)/.25|0;kz<=((z+o.r+HW)/.25|0);kz++){const k=kx+','+kz;(obst.get(k)||obst.set(k,[]).get(k)).push(o)}}
+const addHouseObst=o=>{for(const b of wallBoxes(o))addObstBox(b.x,b.z,b.hx,b.hz,b.rot)};
+// distance from (x,z) to an obstacle's surface; negative inside. For boxes also returns the push-out direction in `obstN`
+const obstN=[0,0];
+function obstGap(o,x,z){if(!o.box){const d=Math.hypot(x-o.x,z-o.z);if(d>1e-6){obstN[0]=(x-o.x)/d;obstN[1]=(z-o.z)/d}else{obstN[0]=1;obstN[1]=0}return d-o.r}
+  const [hx,hz,c,s]=o.box,dx=x-o.x,dz=z-o.z,lx=dx*c-dz*s,lz=dx*s+dz*c,qx=clamp(lx,-hx,hx),qz=clamp(lz,-hz,hz);let nx,nz,d;
+  if(qx!==lx||qz!==lz){nx=lx-qx;nz=lz-qz;d=Math.hypot(nx,nz);nx/=d;nz/=d}else{const ex=hx-Math.abs(lx),ez=hz-Math.abs(lz);if(ex<ez){nx=Math.sign(lx)||1;nz=0;d=-ex}else{nx=0;nz=Math.sign(lz)||1;d=-ez}}
+  obstN[0]=nx*c+nz*s;obstN[1]=-nx*s+nz*c;return d}
+function hitObst(x,z,pad){if(landscapePlay?.hitObstacle(x,z,pad))return true;const kx=(x+HW)/.25|0,kz=(z+HW)/.25|0;for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const l=obst.get((kx+a)+','+(kz+b));if(l)for(const o of l)if(obstGap(o,x,z)<pad)return true}return false}
 function cellOf(x,z){return clamp((z+HW)/CELL|0,0,G-1)*G+clamp((x+HW)/CELL|0,0,G-1)}
 const typeAt=(x,z)=>W?W.type[cellOf(x,z)]:0;
 const waterAt=(x,z)=>W?sampleField(W.B[3],x,z):0;
 
 function drawingHash(){let h=0;for(let t=1;t<=NT;t++){const d=dens[t];for(let i=0;i<d.length;i+=7)h=(h*31+Math.round(d[i]*9)*t)>>>0}for(const o of stamps)h=(h*31+Math.round((o.x+9)*20)*7+Math.round((o.z+9)*20)*13+o.k.length)>>>0;return h}
 
-function clearWorld(){landscapePlay?.clear();clearTimeout(editRefresh);editRefresh=null;livingWorld.clear();worldResources?.clear();if(W&&W.props)W.props.forEach(b=>scene.remove(b.g));campLight.intensity=0;instances.forEach(m=>scene.remove(m));instances=[];obst.clear();fauna.all.forEach(a=>scene.remove(a.g));fauna.all=[];fauna.byKind={};
+function clearWorld(){interact?.clear();landscapePlay?.clear();clearTimeout(editRefresh);editRefresh=null;livingWorld.clear();worldResources?.clear();if(W&&W.props)W.props.forEach(b=>scene.remove(b.g));campLight.intensity=0;instances.forEach(m=>scene.remove(m));instances=[];obst.clear();fauna.all.forEach(a=>scene.remove(a.g));fauna.all=[];fauna.byKind={};
   glows.geometry.setDrawRange(0,0);flies.geometry.setDrawRange(0,0);smoke.geometry.setDrawRange(0,0);ripples.forEach(r=>r.visible=false)}
 
 const PETALS=['#f4efe3','#f2d05a','#e89ab0','#b69cf0','#e8674f'];
@@ -458,16 +469,17 @@ function grow(){
     p.frustumCulled=false;p.castShadow=true;src.castShadow=false;src.userData.proxy=p;scene.add(p);instances.push(p);
     p.material=new THREE.MeshBasicMaterial({colorWrite:false,depthWrite:false});};
   shadowProxy(poles,geoPoleSh);shadowProxy(fol[0],geoDecSh);shadowProxy(fol[1],geoConSh);
-  T.forEach((o,k)=>{o.pi=k;o.fm=fol[o.kind];o.tall=TALL[o.kind];addObst(o.x,o.z,.02+o.s*.02)});
-  const walls=mk(geoWalls,matWalls,Ho),roofs=mk(geoRoof,matRoof,Ho,true,'rc'),wins=mk(geoWin,matGlow,Ho,false,'none');
-  Ho.forEach(o=>addObst(o.x,o.z,.13*o.s));
+  T.forEach((o,k)=>{o.id=k;o.pi=k;o.fm=fol[o.kind];o.tall=TALL[o.kind];addObst(o.x,o.z,.02+o.s*.02)});Ro.forEach((o,k)=>{o.id=k});
+  enlargeHouses(Ho,{waterAt,typeAt,hitObst});
+  const walls=mk(HG.walls,matWalls,Ho),roofs=mk(HG.roof,matRoof,Ho,true,'rc'),wins=mk(HG.wins,matGlow,Ho,false,'none'),furn=mk(HG.furn,matFurn,Ho,true,'none'),cloth=mk(HG.cloth,matCloth,Ho,false,'none');
+  Ho.forEach(o=>addHouseObst(o));
   const posts=mk(geoPost,matDark,La),heads=mk(geoLampHead,matGlow,La,false,'none');La.forEach(o=>addObst(o.x,o.z,.02));
   W.grass=[[mk(geoTuft,matGrass,Tu,false),Tu,.6,1],[mk(geoFlower,matRock,Fl,false),Fl,.6,1],[mk(geoRock,matRock,Ro),Ro,.5,.6]];
-  W.inst={poles,walls,roofs,wins,posts,heads,fol};W.byKind=byKind;
+  W.inst={poles,walls,roofs,wins,furn,cloth,posts,heads,fol};W.byKind=byKind;
   // glows: windows + lanterns
   const gp=glows.geometry.attributes;let gi=0;
   const addGlow=(x,y,z,s,r,g,b)=>{if(gi>=600)return;gp.position.setXYZ(gi,x,y,z);gp.color.setXYZ(gi,r,g,b);gp.size.setX(gi,s);gp.alpha.setX(gi,1);gi++};
-  Ho.forEach(o=>{const c=Math.cos(o.rot),s=Math.sin(o.rot),sc2=.2*o.s;o.glow=gi;addGlow(o.x+(.2*c+.43*s)*sc2,o.y+.4*sc2,o.z+(-.2*s+.43*c)*sc2,.09,1,.72,.38)});
+  Ho.forEach(o=>{const L=houseLayout(o);o.glow=gi;addGlow(L.window.x,o.y+L.window.y,L.window.z,.12,1,.72,.38);const hp=houseToWorld(o,.15,-.15);o.glow2=gi;addGlow(hp.x,o.y+.05*o.s,hp.z,.1,1,.55,.25)});
   La.forEach(o=>{o.glow=gi;addGlow(o.x,o.y+.18,o.z,.14,1,.75,.42)});
   const Br=[];for(let gz=0;gz<G;gz++)for(let gx=0;gx<G;gx++){const i=gz*G+gx;if(B[5][i]>.28&&B[3][i]>.3){W.bridge[i]=1;Br.push({x:-HW+(gx+.5)*CELL,z:-HW+(gz+.5)*CELL,y:WATER_Y+.012,s:1,rot:(gx+gz)%2?0:Math.PI/2,delay:3+R()*.8,c:colJ('#8a6a48',.02,.1,.12)})}}
   W.grass.push([mk(geoPlank,matRock,Br),Br,.5,1]);
@@ -476,6 +488,7 @@ function grow(){
     if(b.glowY!==undefined){b.glow=gi;addGlow(st.x,y+b.glowY,st.z,b.glowS,1,.7,.35)}});
   glows.geometry.setDrawRange(0,gi);gp.position.needsUpdate=gp.color.needsUpdate=gp.size.needsUpdate=gp.alpha.needsUpdate=true;glows.userData.n=gi;
   spawnFauna();
+  interact?.build(W); // what you can do with everything that just grew (src/activities/interactions.js)
   // skinned animals need their own shaders, which Direct3D can take seconds to compile: build them off the main thread
   // (KHR_parallel_shader_compile) and let the animals appear once that is done
   W.faunaAt=Infinity;{const wref=W,hid=fauna.all.filter(a=>!a.g.visible);hid.forEach(a=>a.g.visible=true);
@@ -508,11 +521,11 @@ function updateGrowth(dt){
     dummy.position.set(o.x,yy,o.z);dummy.rotation.set(o.lx,o.rot,o.lz);
     const ts=o.tall?o.s*o.tall*Math.max(tg,1e-4):1e-4;dummy.scale.set(o.s*(.5+.5*tg),ts,o.s*(.5+.5*tg));dummy.updateMatrix();poles.setMatrixAt(o.pi,dummy.matrix);
     const fs=fg>0?o.s*eBack(fg):1e-4;dummy.scale.set(fs,fs,fs);dummy.updateMatrix();o.fm.setMatrixAt(o.fi,dummy.matrix);o.fm.instanceMatrix.needsUpdate=true}}
-  if(busy(E.ho)){walls.instanceMatrix.needsUpdate=roofs.instanceMatrix.needsUpdate=wins.instanceMatrix.needsUpdate=true;W.houses.forEach((o,i)=>{const g=clamp((T-o.delay)/.9),s=.2*o.s*Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s*(g<1?eOut(g):1),s);dummy.updateMatrix();walls.setMatrixAt(i,dummy.matrix);roofs.setMatrixAt(i,dummy.matrix);wins.setMatrixAt(i,dummy.matrix)})}
+  if(busy(E.ho)){for(const m of [walls,roofs,wins,W.inst.furn,W.inst.cloth])m.instanceMatrix.needsUpdate=true;W.houses.forEach((o,i)=>{const g=clamp((T-o.delay)/.9),s=o.s*Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s*(g<1?eOut(g):1),s);dummy.updateMatrix();for(const m of [walls,roofs,wins,W.inst.furn,W.inst.cloth])m.setMatrixAt(i,dummy.matrix)})}
   W.props.forEach((b,bi)=>{const g=clamp((T-b.delay)/.9);b.g.scale.setScalar(Math.max(eBack(g)*b.base,1e-4));b.g.position.y=b.y*rise;if(g>0&&!b.pl){b.pl=1;pluck(196*(1+bi%3*.5),b.x/HW,.05)}});
   if(busy(E.la)){posts.instanceMatrix.needsUpdate=heads.instanceMatrix.needsUpdate=true;W.lanterns.forEach((o,i)=>{const g=clamp((T-o.delay)/.6),s=Math.max(eBack(g),1e-4);dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);dummy.scale.set(s,s,s);dummy.updateMatrix();posts.setMatrixAt(i,dummy.matrix);heads.setMatrixAt(i,dummy.matrix)})}
   W.grass.forEach(([m,arr,dur,ys],gi)=>{if(!busy(E.gr[gi]))return;m.instanceMatrix.needsUpdate=true;arr.forEach((o,k)=>{const g=eBack(clamp((T-o.delay)/dur));dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);const s=Math.max(g*o.s,1e-4);dummy.scale.set(s,s*ys,s);dummy.updateMatrix();m.setMatrixAt(k,dummy.matrix)})});
-  const gp=glows.geometry.attributes.position;W.houses.forEach(o=>{gp.setY(o.glow,(o.y+.08*o.s)*rise)});W.lanterns.forEach(o=>gp.setY(o.glow,o.y*rise+.18));W.props.forEach(b=>{if(b.glow!==undefined)gp.setY(b.glow,b.y*rise+b.glowY)});gp.needsUpdate=true;
+  const gp=glows.geometry.attributes.position;W.houses.forEach(o=>{gp.setY(o.glow,o.y*rise+.16*o.s);gp.setY(o.glow2,o.y*rise+.05*o.s)});W.lanterns.forEach(o=>gp.setY(o.glow,o.y*rise+.18));W.props.forEach(b=>{if(b.glow!==undefined)gp.setY(b.glow,b.y*rise+b.glowY)});gp.needsUpdate=true;
   if(T>6.2){mode=mode==='growing'?'view':mode;showUI();
     // a surprise theme may bring its own light, unless you already picked one
     if(W.mood&&mode==='view'){if(sky.mode==='lamp')setSkyPreset(W.mood);W.mood=null}if(mode==='view')setHint(sky.mode==='lamp'?'Drag to turn the paper. Pinch to zoom. Try the sun button for night.':'Drag to turn the paper. Pinch to zoom. The sun button changes the light.')}
@@ -552,16 +565,18 @@ const PROPS={
     const beam=new THREE.Group();beam.position.y=.54;const bg=new THREE.ConeGeometry(.14,1.8,18,1,true);bg.translate(0,-.9,0);bg.rotateZ(Math.PI/2);
     const b2=new THREE.Mesh(bg,matBeam);b2.rotation.y=Math.PI;beam.add(new THREE.Mesh(bg,matBeam),b2);g.add(beam);
     return {g,beam,r:.07,glowY:.54,glowS:.3}}};
-function updateProps(dt,et){if(!W||!W.props||!W.props.length)return;const night=sm(.2,.9,sky.night);let firstFire=null;
+// the lighthouse lamp can be lit by hand (by day too); the fire you sit at gets the light and can be stoked
+let lampOn=false,focusFire=null;
+function updateProps(dt,et){if(!W||!W.props||!W.props.length)return;const night=sm(.2,.9,sky.night);let firstFire=focusFire&&W.props.includes(focusFire)&&!focusFire.destroyed?focusFire:null;
   const ga=glows.geometry.attributes.alpha;
   for(const b of W.props){
     if(b.k==='windmill')b.hub.rotation.z-=dt*(.9+sky.rain*1.5);
-    else if(b.k==='campfire'){if(!firstFire)firstFire=b;const fl=1+Math.sin(et*17+b.x)*.12+Math.sin(et*29)*.08;b.f.scale.set(1,fl,1);b.f2.scale.set(1,2-fl,1);
+    else if(b.k==='campfire'){if(!firstFire)firstFire=b;b.stoke=Math.max(0,(b.stoke||0)-dt);const big=1+b.stoke*.5,fl=(1+Math.sin(et*17+b.x)*.12+Math.sin(et*29)*.08)*big;b.f.scale.set(big,fl,big);b.f2.scale.set(big,2*big-fl,big);
       if(b.glow!==undefined)ga.setX(b.glow,.75+Math.sin(et*21)*.15);
       if(mode==='walk'&&AC&&Rr()<dt*6){const d=Math.hypot(heroS.x-b.x,heroS.z-b.z);if(d<1.5)burst('stone',.06*Math.exp(-d*2),clamp((b.x-heroS.x)*2,-1,1))}}
-    else if(b.k==='lighthouse'){b.beam.rotation.y+=dt*.8;matBeam.opacity=night*.22*(1-sky.rain*.4)}}
+    else if(b.k==='lighthouse'){b.beam.rotation.y+=dt*.8;matBeam.opacity=Math.max(night,lampOn?.8:0)*.22*(1-sky.rain*.4)}}
   ga.needsUpdate=true;
-  if(firstFire&&firstFire.g.scale.x>.5*firstFire.base){campLight.position.set(firstFire.x,firstFire.y*rise+.06*firstFire.base,firstFire.z);campLight.intensity=PLU*sm(.25,.75,night)*1.65*(1+Math.sin(et*19)*.12)}}
+  if(firstFire&&firstFire.g.scale.x>.5*firstFire.base){campLight.position.set(firstFire.x,firstFire.y*rise+.06*firstFire.base,firstFire.z);campLight.intensity=PLU*sm(.25,.75,night)*1.65*(1+Math.sin(et*19)*.12)*(1+(firstFire.stoke||0)*.4)}}
 
 /* ================= seasons ================= */
 let season='summer';
@@ -701,8 +716,8 @@ function updateFauna(dt,et){
     W.flies.forEach((f,i)=>{const t=et*f.f+f.ph,x=f.x+Math.sin(t*.7)*f.r,z=f.z+Math.cos(t*.53)*f.r;fp.position.setXYZ(i,x,hAt(x,z)+.08+Math.sin(t*1.3)*.05,z);fp.alpha.setX(i,sm(.2,1,Math.sin(t*2.1)*.5+.5))});
     fp.position.needsUpdate=fp.alpha.needsUpdate=true}
   if(W.smoke&&W.smoke.length){const sp=smoke.geometry.attributes;smoke.material.uniforms.uOp.value=growT>4?.55:0;
-    W.smoke.forEach((s,i)=>{s.age+=dt;if(s.age>3)s.age-=3;const h=s.h,c=Math.cos(h.rot),sn=Math.sin(h.rot),sc2=.2*h.s,a=s.age;
-      const bx0=h.x+(.28*c+.14*sn)*sc2,bz0=h.z+(-.28*sn+.14*c)*sc2;sp.position.setXYZ(i,bx0+a*.04+Math.sin(a*2+i)*.01,h.y*rise+1.05*sc2+a*.07,bz0+a*.02);sp.size.setX(i,.02+a*.025);sp.alpha.setX(i,sm(0,.3,a)*(1-a/3)*.7)});
+    W.smoke.forEach((s,i)=>{s.age+=dt;if(s.age>3)s.age-=3;const h=s.h,a=s.age,ch=houseToWorld(h,.12,-.07);
+      const bx0=ch.x,bz0=ch.z;sp.position.setXYZ(i,bx0+a*.04+Math.sin(a*2+i)*.01,h.y*rise+.48*h.s+a*.07,bz0+a*.02);sp.size.setX(i,.02+a*.025);sp.alpha.setX(i,sm(0,.3,a)*(1-a/3)*.7)});
     sp.position.needsUpdate=sp.size.needsUpdate=sp.alpha.needsUpdate=true}
   ripples.forEach(r=>{if(!r.visible)return;r.userData.t+=dt/1.4;const t=r.userData.t;r.scale.setScalar(r.userData.s*(.3+t*1.7));r.material.opacity=(1-t)*.5;if(t>=1)r.visible=false});
 }
@@ -894,7 +909,8 @@ function animHero(dt,et){const H=hero,s=heroS,A0=anim;
   H.body.rotation.x=w*1.2;
   H.tail.rotation.x=.25+s.sp*3.5+Math.sin(et*9)*.08*m;H.tail.rotation.z=Math.sin(et*6.3)*.1*m;
   H.lant.visible=lantOn;H.lant.rotation.x=-a0(H)*.6+Math.sin(et*4)*.05*m;
-  H.g.position.set(s.x,s.y,s.z);H.g.rotation.y=s.face;H.g.visible=!s.fp&&mode!=='draw';
+  const ap=H===hero?interact?.heroPose():null;
+  H.g.position.set(s.x,s.y,s.z);H.g.rotation.y=s.face;H.g.visible=!s.fp&&mode!=='draw'&&!(ap&&ap.hidden);
   if(H.skin)animSkin(H,dt,s.sp,s.swim,sky.night>.4,fishS.state!=='idle',heroWave>0);
   if(H===hero&&heroLight.intensity>0)H.lb.getWorldPosition(heroLight.position)}
 const a0=H=>H.arms[1].sh.rotation.x+H.arms[1].elbow.rotation.x;
@@ -905,7 +921,7 @@ function footstep(){const s=heroS,t=typeAt(s.x,s.z),onB=W&&W.bridge[cellOf(s.x,s
 function collide(x,z,fromX=x,fromZ=z){x=clamp(x,-HW+.07,HW-.07);z=clamp(z,-HW+.07,HW-.07);
   for(let it=0;it<2;it++){const kx=(x+HW)/.25|0,kz=(z+HW)/.25|0;
     for(let a=-1;a<=1;a++)for(let b=-1;b<=1;b++){const l=obst.get((kx+a)+','+(kz+b));if(!l)continue;
-      for(const o of l){const dx=x-o.x,dz=z-o.z,d=Math.hypot(dx,dz),R0=o.r+.022;if(d<R0){if(d<1e-5){x+=R0;continue}x=o.x+dx/d*R0;z=o.z+dz/d*R0}}}}
+      for(const o of l){const g=obstGap(o,x,z);if(g<.022){x+=obstN[0]*(.022-g);z+=obstN[1]*(.022-g)}}}}
   if(landscapePlay?.hitObstacle(x,z,.022)){
     if(!hitObst(x,fromZ,.022))z=fromZ;
     else if(!hitObst(fromX,z,.022))x=fromX;
@@ -921,7 +937,7 @@ function buildNav(){const N=G*G,c=new Float32Array(N);const frozen=season==='win
   for(let gz=0;gz<G;gz++)for(let gx=0;gx<G;gx++){const i=gz*G+gx,x=-HW+(gx+.5)*CELL,z=-HW+(gz+.5)*CELL;
     if(gx<1||gz<1||gx>G-2||gz>G-2){c[i]=Infinity;continue}
     let v=1;const l=[];const kx=(x+HW)/.25|0,kz=(z+HW)/.25|0;let blocked=false;
-    for(let a=-1;a<=1&&!blocked;a++)for(let b=-1;b<=1&&!blocked;b++){const L=obst.get((kx+a)+','+(kz+b));if(L)for(const o of L)if(Math.hypot(o.x-x,o.z-z)<o.r+.03){blocked=true;break}}
+    for(let a=-1;a<=1&&!blocked;a++)for(let b=-1;b<=1&&!blocked;b++){const L=obst.get((kx+a)+','+(kz+b));if(L)for(const o of L)if(obstGap(o,x,z)<(o.box?CELL*.5:.03)){blocked=true;break}}
     if(blocked||landscapePlay?.hitObstacle(x,z,.03)){c[i]=Infinity;continue}
     const h=W.cellH[i];let dh=0;for(const [a,b] of [[1,0],[-1,0],[0,1],[0,-1]]){const j=(gz+b)*G+gx+a;dh=Math.max(dh,Math.abs(W.cellH[j]-h))}
     v+=dh*30;if(h>2.6)v+=2;
@@ -963,7 +979,7 @@ function setDest(x,z){const [fx,fz]=nearestFree(x,z);marker.position.set(fx,Math
 function spawnHero(){let best=null,bd=1e9;const B=W.B;
   for(let gz=3;gz<G-3;gz++)for(let gx=3;gx<G-3;gx++){const i=gz*G+gx,t=W.type[i];const pref=t===5?0:t===2||t===6?1.5:t===9||t===7?2.5:t===0?5:99;if(pref>50||B[3][i]>.25)continue;
     const x=-HW+(gx+.5)*CELL,z=-HW+(gz+.5)*CELL;const d=Math.hypot(x,z-2)+pref;if(d<bd&&!insideObst(x,z)){bd=d;best=[x,z]}}
-  if(!best)best=[0,HW-.6];heroS.x=best[0];heroS.z=best[1];
+  if(!best)best=[0,HW-.6];const home=interact?.homeSpot();if(home&&!insideObst(home.x,home.z))best=[home.x,home.z];heroS.x=best[0];heroS.z=best[1];
   let fx=0,fz=0,n=0;W.trees.forEach(o=>{fx+=o.x;fz+=o.z;n++});if(n){fx/=n;fz/=n}
   heroS.camYaw=Math.atan2(-(fx-heroS.x),-(fz-heroS.z));heroS.face=heroS.camYaw+Math.PI;heroS.camPitch=.28;heroS.y=hAt(heroS.x,heroS.z);heroS.path=null;heroS.vx=heroS.vz=heroS.sp=0;showPath(null);marker.visible=false;W.nav=null}
 function updateHero(dt,input){const s=heroS;const manual=Math.hypot(input.f,input.s)>.08;
@@ -1049,7 +1065,7 @@ const onMove=e=>{landscapePlay?.pointerMove(e);const pr=ptrs.get(e.pointerId);if
     if(joy&&e.pointerId===joy.id){let jx=e.clientX-joy.x0,jy=e.clientY-joy.y0;const l=Math.hypot(jx,jy);if(l>52){jx*=52/l;jy*=52/l}joy.dx=jx/52;joy.dy=jy/52;knob.style.transform=`translate(${jx}px,${jy}px)`}
     else if(look&&e.pointerId===look.id){heroS.camYaw-=dx*.006;heroS.camPitch=clamp(heroS.camPitch+dy*.004*(heroS.fp?-1:1),heroS.fp?-.8:-.1,heroS.fp?1.4:1.25);if(Math.hypot(pr.x-pr.x0,pr.y-pr.y0)>8)heroS.look=performance.now()}}};
 const up=e=>{if(landscapePlay?.pointerUp(e)){ptrs.delete(e.pointerId);drawing=false;if(joy?.id===e.pointerId)joyEnd();look=null;return}const pr=ptrs.get(e.pointerId);ptrs.delete(e.pointerId);drawing=false;if(ptrs.size<2)pinch0=0;
-  if(mode==='walk'&&pr&&!(joy&&e.pointerId===joy.id)&&Math.hypot(pr.x-pr.x0,pr.y-pr.y0)<10&&performance.now()-pr.t0<350){const g=groundAt({clientX:pr.x,clientY:pr.y});
+  if(mode==='walk'&&pr&&!(joy&&e.pointerId===joy.id)&&Math.hypot(pr.x-pr.x0,pr.y-pr.y0)<10&&performance.now()-pr.t0<350&&!interact?.tap(pr.x,pr.y)){const g=groundAt({clientX:pr.x,clientY:pr.y});
     if(g&&Math.abs(g.x)<HW-.1&&Math.abs(g.z)<HW-.1){const d=setDest(g.x,g.z),pth=astar(heroS.x,heroS.z,d[0],d[1]);if(pth){heroS.path=pth;heroS.pi=1;heroS.stuck=0;showPath(pth)}else{marker.visible=false;toast("Can't find a way there. Try the map's teleport.")}}}
   if(mode==='map'&&pr&&ptrs.size===0&&Math.hypot(pr.x-pr.x0,pr.y-pr.y0)<10&&performance.now()-pr.t0<400)mapTap(pr.x,pr.y);
   if(joy&&e.pointerId===joy.id)joyEnd();if(look&&e.pointerId===look.id)look=null};
@@ -1067,7 +1083,7 @@ canvas.addEventListener('pointermove',e=>{if(!isT(e))onMove(e)});
 if(!window.PointerEvent){const mp=e=>({pointerId:'m',clientX:e.clientX,clientY:e.clientY,pointerType:'mouse',isPrimary:true});
   canvas.addEventListener('mousedown',e=>onDown(mp(e)));addEventListener('mousemove',e=>onMove(mp(e)));addEventListener('mouseup',e=>up(mp(e)))}
 canvas.addEventListener('wheel',e=>{if(mode==='view'||mode==='map'){e.preventDefault();sph.r=clamp(sph.r*(1+e.deltaY*.001),4,70)}else if(mode==='walk'){e.preventDefault();heroS.dist=clamp(heroS.dist*(1+e.deltaY*.0012),.2,1.5)}else if(mode==='siege'){e.preventDefault();landscapePlay?.wheel(e)}},{passive:false});
-addEventListener('keydown',e=>{if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName||'')||e.target?.isContentEditable)return;if(landscapePlay?.key(e,true))return;keys[e.code]=true;if(e.code==='KeyV'&&mode==='walk')$('#tCam').click();if(e.code==='KeyM'){if(mode==='walk')enterMap();else if(mode==='map')leaveMap(false)}});addEventListener('keyup',e=>{landscapePlay?.key(e,false);keys[e.code]=false});
+addEventListener('keydown',e=>{if(/^(INPUT|TEXTAREA|SELECT)$/.test(e.target?.tagName||'')||e.target?.isContentEditable)return;if(interact?.key(e,true))return;if(landscapePlay?.key(e,true))return;keys[e.code]=true;if(e.code==='KeyV'&&mode==='walk')$('#tCam').click();if(e.code==='KeyM'){if(mode==='walk')enterMap();else if(mode==='map')leaveMap(false)}});addEventListener('keyup',e=>{landscapePlay?.key(e,false);keys[e.code]=false});
 addEventListener('blur',()=>{for(const k in keys)keys[k]=false});
 
 /* ================= UI ================= */
@@ -1168,7 +1184,10 @@ const JOURNAL=[['deer','🦌','Deer','Walk slowly near meadows'],['rabbit','🐇
   ['fly','🦋','Butterfly','Flowers on a warm day'],['bird','🐦','Birds','Look up in daylight'],['boat','⛵','Paper boat','Big lakes sometimes have one'],
   ['firefly','✨','Fireflies','Near trees, after dark'],['campfire','🔥','Campfire','Stamp one and sit close'],['windmill','🌾','Windmill','Stamp one on a meadow'],
   ['beam','🔦','Lighthouse beam','Stand near a lighthouse at night'],['peak','🏔️','Snowy peak','Climb a tall mountain'],['swim','🏊','A swim','Walk into deep water'],
-  ['bridge','🌉','Bridge crossing','Draw a path across water'],['ice','🧊','Walk on ice','Try it in winter'],['catch','🎣','First catch','Stand at the water’s edge'],['friend','👋','A fellow wanderer','Walk a saved world with someone']];
+  ['bridge','🌉','Bridge crossing','Draw a path across water'],['ice','🧊','Walk on ice','Try it in winter'],['catch','🎣','First catch','Stand at the water’s edge'],['friend','👋','A fellow wanderer','Walk a saved world with someone'],
+  ['treetop','🌳','Treetop','Walk up to a big tree and climb it'],['fireside','🪵','Fireside seat','Sit down by a campfire'],['rested','⛺','A good rest','Rest in a tent, or a bed in a village house'],
+  ['lookout','🗼','Lighthouse gallery','Climb a lighthouse'],['millTop','🪜','Windmill balcony','Climb a windmill'],['lantern','🏮','Lamplighter','Light a lantern on a path'],
+  ['visit','🏠','Inside a house','Step through a village door'],['neighbour','🧑','A villager','Say hello in a village'],['helper','🤝','A good deed','Help a villager with an errand']];
 let found=new Set(),jNew=false;try{found=new Set(JSON.parse(localStorage.getItem('pw-journal')||'[]').filter(k=>JOURNAL.some(j=>j[0]===k)))}catch(_){}
 function discover(k){if(found.has(k))return;const j=JOURNAL.find(x=>x[0]===k);if(!j)return;found.add(k);try{localStorage.setItem('pw-journal',JSON.stringify([...found]))}catch(_){}
   jNew=true;$('#tMore .nb').classList.remove('hidden');toast(`New in your journal: ${j[2]} ${j[1]}  (${found.size} of ${JOURNAL.length})`);
@@ -1230,7 +1249,7 @@ function updatePeers(dt,et){roomT+=dt;if(roomT>1){roomT=0;syncRoom()}
   if(heroWave>0){heroWave-=dt;waveArm(hero,heroWave,et)}
   if(!wroom){if(peerAv.size)clearPeers();return}
   if(mode==='walk'){const now=performance.now();if(now-lastPresT>110){lastPresT=now;const s=heroS,r3=v=>Math.round(v*1000)/1000;
-    const pres={x:r3(s.x),z:r3(s.z),y:r3(s.y),f:r3(s.face),s:r3(Math.min(s.sp,1)),sw:s.swim?1:0,look:myLook,id:myId||null};const str=JSON.stringify(pres);
+    const pres={x:r3(s.x),z:r3(s.z),y:r3(s.y),f:r3(s.face),s:r3(Math.min(s.sp,1)),sw:s.swim?1:0,a:interact?.presenceAct()||0,look:myLook,id:myId||null};const str=JSON.stringify(pres);
     if(str!==lastPresStr){lastPresStr=str;wroom.presence(pres).catch(()=>{})}}}
   let list=[];try{list=wroom.peers()}catch(_){}const live=new Set();let added=false;
   for(const p of list){if(p.sameTab||p.kind!=='viewer')continue;const pr=p.presence||{};if(typeof pr.x!=='number'||typeof pr.z!=='number')continue;live.add(p.peer);
@@ -1238,7 +1257,7 @@ function updatePeers(dt,et){roomT+=dt;if(roomT>1){roomT=0;syncRoom()}
     if(!a){const H=makeHero(lk);H.lookHat='ranger';setLook(H,lk);H.lant.visible=false;scene.add(H.g);a={H,x:clamp(pr.x,-HW,HW),z:clamp(pr.z,-HW,HW),y:+pr.y||0,f:+pr.f||0,ph:0,sp:0,name:'',label:makeLabel(),wave:0};
       H.g.add(a.label);drawLabel(a.label,'Wanderer');peerAv.set(p.peer,a);added=true}
     else setLook(a.H,lk);
-    a.by=p.by||(typeof pr.id==='string'?pr.id:null);a.tx=clamp(pr.x,-HW,HW);a.tz=clamp(pr.z,-HW,HW);a.ty=clamp(+pr.y||0,-1,5);a.tf=+pr.f||0;a.tsp=clamp(+pr.s||0,0,1);a.sw=!!pr.sw}
+    a.by=p.by||(typeof pr.id==='string'?pr.id:null);a.tx=clamp(pr.x,-HW,HW);a.tz=clamp(pr.z,-HW,HW);a.ty=clamp(+pr.y||0,-1,5);a.tf=+pr.f||0;a.tsp=clamp(+pr.s||0,0,1);a.sw=!!pr.sw;a.act=pr.a==='sit'||pr.a==='climb'||pr.a==='hide'?pr.a:0}
   for(const [k,a] of peerAv)if(!live.has(k)){scene.remove(a.H.g);peerAv.delete(k)}
   if(added){resolveNames();updateFab();discover('friend')}else if(peerAv.size!==+$('#tWave .badge').textContent)updateFab();
   for(const a of peerAv.values()){const k=1-Math.exp(-dt*8);a.x=lerp(a.x,a.tx,k);a.z=lerp(a.z,a.tz,k);a.y=lerp(a.y,a.ty,k);a.f=angLerp(a.f,a.tf,k);a.sp=lerp(a.sp,a.tsp,k);
@@ -1246,8 +1265,10 @@ function updatePeers(dt,et){roomT+=dt;if(roomT>1){roomT=0;syncRoom()}
     H.legs.forEach((L,i)=>{const p=a.ph+(i?Math.PI:0);L.hip.rotation.x=a.sw?.3*Math.sin(et*7+i*3):-.6*Math.sin(p)*m;L.knee.rotation.x=a.sw?.25:.05+.9*m*Math.max(0,Math.cos(p+.55));L.ankle.rotation.x=0});
     H.arms.forEach((A,i)=>{const p=a.ph+(i?0:Math.PI);A.sh.rotation.x=a.sw?-(et*4+i*Math.PI):.5*Math.sin(p)*m;A.sh.rotation.z=(i?1:-1)*.1;A.elbow.rotation.x=-.3-.4*m});
     H.body.rotation.x=a.sw?1.2:0;H.hips.position.y=.95-(a.sw?.1:m*.03*Math.abs(Math.cos(a.ph)));
+    if(a.act==='sit'){H.legs.forEach(L=>{L.hip.rotation.x=-1.45;L.knee.rotation.x=1.45});H.hips.position.y=.5}
+    else if(a.act==='climb'){H.arms.forEach((A,i)=>{A.sh.rotation.x=-2.6+.3*Math.sin(et*5+i*3);A.elbow.rotation.x=-.5})}
     if(a.wave>0){a.wave-=dt;waveArm(H,a.wave,et)}
-    H.g.position.set(a.x,a.y,a.z);H.g.rotation.y=a.f;H.g.visible=mode==='walk'||mode==='map'||mode==='flying';a.label.visible=!(mode==='walk'&&heroS.fp&&Math.hypot(a.x-heroS.x,a.z-heroS.z)<.15)}}
+    H.g.position.set(a.x,a.y,a.z);H.g.rotation.y=a.f;H.g.visible=(mode==='walk'||mode==='map'||mode==='flying')&&a.act!=='hide';a.label.visible=!(mode==='walk'&&heroS.fp&&Math.hypot(a.x-heroS.x,a.z-heroS.z)<.15)}}
 
 /* ================= fishing ================= */
 const FISH=[['minnow','Minnow','🐟',[4,9],1],['trout','Speckled trout','🐟',[18,40],.8],['carp','Mossy carp','🐡',[25,60],.55],['koi','Golden koi','🎏',[20,45],.16],
@@ -1283,7 +1304,7 @@ function landCatch(){const f=rollCatch(),[lo,hi]=f[3],size=Math.round(lo+(hi-lo)
   [659,784,988,1319].forEach((q,i)=>setTimeout(()=>pluck(q,0,.045),i*90));ripple(fishS.bx,fishS.bz,.12);
   const junk=f[0]==='boot'||f[0]==='bottle';let msg=junk?`You fished up an ${f[1].toLowerCase()} ${f[2]}`:`You caught a ${f[1]} ${f[2]}, ${size} cm${rec?'. A new best!':'!'}`;
   if(f[0]==='bottle')msg=`A message in a bottle 🍾 It says: “${NOTES[Rr()*NOTES.length|0]}”`;if(f[0]==='bottle'||f[0]==='boot')msg=msg.replace('an message','a message');
-  endFish();toast(msg);discover('catch');renderJournal()}
+  endFish();toast(msg);discover('catch');renderJournal();interact?.event('catch')}
 function tapFish(){const st=fishS.state;if(st==='idle')startCast();else if(st==='bite'){fishS.state='reel';fishS.t=0;fishS.won=true;burst('splash',.12);setFishBtn()}
   else if(st==='wait'||st==='cast'){fishS.state='reel';fishS.t=0;fishS.won=false;setFishBtn()}}
 let fishScanT=0;
@@ -1341,11 +1362,14 @@ function animSkin(H,dt,sp,swim,night,fishing,waving){const S=H.skin;
   else if(fishing)clip='torch';
   else if(sp>.03){if(sp<.24){clip='walk';ts=clamp(sp/.1,.7,1.9)}else if(sp<.48){clip='jog';ts=clamp(sp/.24,.75,1.6)}else{clip='sprint';ts=clamp(sp/.45,.8,1.5)}}
   else if(waving)clip='dance';else if(night)clip='torch';
+  const ap=H===hero?interact?.heroPose():null;if(ap&&S.acts[ap.clip]){clip=ap.clip;ts=ap.ts||1}
   skinPlay(S,clip);S.acts[clip].timeScale=ts;S.mixer.update(dt);
+  // lying in a bed: the body tips back onto the mattress (feet at the position, head toward the pillow)
+  S.wrap.rotation.x=lerp(S.wrap.rotation.x,ap&&ap.lie?-Math.PI/2:0,1-Math.exp(-dt*8));
   // the swim clips lie the body flat, lower than standing: float it up to the surface
   S.wrap.position.y=lerp(S.wrap.position.y,swim?.042:0,1-Math.exp(-dt*6));
   // glance at the nearest animal, the way people do: head turns up to ~57°, eased in and out
-  if(H===hero){let tgt=null,bd=1.1;for(const o of fauna.all){if(!o.g.visible||o.kind==='fish')continue;const d=Math.hypot(o.g.position.x-heroS.x,o.g.position.z-heroS.z);if(d<bd){bd=d;tgt=o.g.position}}
+  if(H===hero){let tgt=interact?.lookTarget()||null,bd=1.1;if(!tgt)for(const o of fauna.all){if(!o.g.visible||o.kind==='fish')continue;const d=Math.hypot(o.g.position.x-heroS.x,o.g.position.z-heroS.z);if(d<bd){bd=d;tgt=o.g.position}}
     let want=0;if(tgt&&!swim){want=((Math.atan2(tgt.x-heroS.x,tgt.z-heroS.z)-heroS.face+Math.PI*3)%(Math.PI*2))-Math.PI;if(Math.abs(want)>1.9)want=0;want=clamp(want,-1,1)}
     S.look=lerp(S.look||0,want,1-Math.exp(-dt*3));
     if(Math.abs(S.look)>.01){const hb=S.bones.Head;hb.updateWorldMatrix(true,false);hb.parent.getWorldQuaternion(skinQ2);hb.getWorldQuaternion(skinQ);
@@ -1353,7 +1377,9 @@ function animSkin(H,dt,sp,swim,night,fishing,waving){const S=H.skin;
   // the lantern hangs straight and the rod points ahead whatever the hand is doing
   H.g.getWorldQuaternion(skinQ);S.handR.getWorldQuaternion(skinQ2);
   H.lant.quaternion.copy(skinQ2.invert()).multiply(skinQ);H.lant.scale.setScalar(HS/S.handR.getWorldScale(skinWant).x);
-  if(rodG.parent===S.handR){rodG.quaternion.copy(H.lant.quaternion).multiply(skinUp.setFromEuler(skinTilt));rodG.scale.copy(H.lant.scale)}}
+  if(rodG.parent===S.handR){rodG.quaternion.copy(H.lant.quaternion).multiply(skinUp.setFromEuler(skinTilt));rodG.scale.copy(H.lant.scale)}
+  // hands and feet on trunks and rungs, a hand to a lantern or the hearth, breathing while seated (src/hero/pose.js)
+  if(ap){H.g.updateMatrixWorld(true);interact.pose(S,dt,clock.elapsedTime)}}
 let foxProto=null,FOX_S=1,FOX_R=Math.PI/2,deerProto=null,DEER_S=1,DEER_R=Math.PI/2;
 // a rigged animal: body turned to face +x like the jointed animals, clips named per kind in `clips`
 function makeRigged(P,sc,rot,clips){const g=new THREE.Group(),m=THREE.SkeletonUtils.clone(P.scene),w=new THREE.Group();w.add(m);w.scale.setScalar(sc);w.rotation.y=rot;g.add(w);
@@ -1459,14 +1485,16 @@ function frame(){requestAnimationFrame(frame);if(ctxGone)return;const frameDelta
   updateSky(dt);updateFauna(dt,et);updateProps(dt,et);updateSeasonPts(dt,et);
   if(mode==='walk'){let f=0,s=0;if(joy){f=-joy.dy;s=joy.dx}
     if(keys.KeyW||keys.ArrowUp)f+=1;if(keys.KeyS||keys.ArrowDown)f-=1;if(keys.KeyA)s-=1;if(keys.KeyD)s+=1;if(keys.ArrowLeft){heroS.camYaw+=dt*1.8;heroS.look=performance.now()}if(keys.ArrowRight){heroS.camYaw-=dt*1.8;heroS.look=performance.now()}
-    if(Math.hypot(f,s)<.12){f=0;s=0}const m=Math.hypot(f,s);if(m>1){f/=m;s/=m}lastInput={f,s};updateHero(dt,{f,s,run:keys.ShiftLeft||keys.ShiftRight});motes.material.size=.006}
+    if(Math.hypot(f,s)<.12){f=0;s=0}const m=Math.hypot(f,s);if(m>1){f/=m;s/=m}lastInput={f,s};
+    // while the wanderer is climbing, sitting or walking a stair, the action moves them instead of the stick
+    if(interact?.busy){interact.step(dt);heroS.swim=false;animHero(dt,et)}else updateHero(dt,{f,s,run:keys.ShiftLeft||keys.ShiftRight});motes.material.size=.006}
   else if(hero.g.visible){heroS.sp*=Math.exp(-dt*8);heroS.vx*=Math.exp(-dt*8);heroS.vz*=Math.exp(-dt*8);animHero(dt,et)}
   if(W&&growT>=6.5){if(!W.playStarted){W.playStarted=true;const world=W;landscapePlay?.build(W.activitySite)?.then(()=>{
     if(W!==world)return;
     W.nav=null;
     if(mode==='walk'&&insideObst(heroS.x,heroS.z)){const [x,z]=nearestFree(heroS.x,heroS.z);heroS.x=x;heroS.z=z;heroS.y=hAt(x,z);heroS.path=null;heroS.vx=heroS.vz=0;showPath(null)}
     for(const e of W.impacts)landscapePlay.siege.applyExternalBlast({...e,y:hAt(e.x,e.z)+.15});
-  })}if(W.pendingEdits?.length){const edits=W.pendingEdits;W.pendingEdits=[];for(const e of edits)try{changeLandscape(e)}catch(_){} }landscapePlay?.update(dt,et)}
+  })}if(W.pendingEdits?.length){const edits=W.pendingEdits;W.pendingEdits=[];for(const e of edits)try{changeLandscape(e)}catch(_){} }landscapePlay?.update(dt,et);interact?.update(dt,et,mode==='walk'?lastInput:null)}
   checkJournal(dt);updateFishing(dt,et,mode==='walk'?lastInput:null);updatePeers(dt,et);fishPose(et);updateWind(et);
   beacon.visible=mode==='map';if(beacon.visible){beacon.position.set(heroS.x,heroS.y+1.2,heroS.z);beacon.material.opacity=.25+Math.sin(et*3)*.12}
   if(tween){tween.t+=dt/tween.dur;const k=eIO(clamp(tween.t));camera.position.lerpVectors(tween.p0,tween.p1,k);tween.cur.lerpVectors(tween.l0,tween.l1,k);
@@ -1507,7 +1535,7 @@ if(DEBUG)window.__pw={renderer,scene,camera,sph,heroS,fauna,get W(){return W},ge
 const warmQ=[];let warmNow=null;
 setTimeout(()=>{if(mode!=='draw')return;const sv=seedV,put=o=>{o.position.set(0,-3,0);o.traverse(m=>{m.frustumCulled=false});warmQ.push(o)};
   const inst=(geo,mat,col,cast)=>{const m=new THREE.InstancedMesh(geo,mat,1);if(col)m.setColorAt(0,new THREE.Color(1,1,1));m.castShadow=cast;m.receiveShadow=true;put(m)};
-  inst(geoPole,matPole,1,true);inst(geoCon,matFol,1,true);inst(geoTuft,matGrass,1,false);inst(geoRock,matRock,1,true);inst(geoRoof,matRoof,1,true);inst(geoWin,matGlow,0,false);inst(geoPost,matDark,1,true);
+  inst(geoPole,matPole,1,true);inst(geoCon,matFol,1,true);inst(geoTuft,matGrass,1,false);inst(geoRock,matRock,1,true);inst(HG.walls,matWalls,1,true);inst(HG.roof,matRoof,1,true);inst(HG.wins,matGlow,0,false);inst(HG.furn,matFurn,0,true);inst(HG.cloth,matCloth,0,false);inst(geoPost,matDark,1,true);
   [makeDeer,makeRabbit,makeFish,makeFly,makeBird,makeBoat].forEach(f=>{const o=f();o.g.traverse(m=>{if(m.isMesh)m.castShadow=true});put(o.g)});
   for(const k in PROPS){const b=PROPS[k]();b.g.traverse(m=>{if(m.isMesh&&m.material!==matBeam)m.castShadow=m.receiveShadow=true});put(b.g)}
   put(makeHero().g);put(new THREE.Mesh(water.geometry,water.material));put(new THREE.Mesh(ripples[0].geometry,ripples[0].material));
@@ -1518,18 +1546,18 @@ setTimeout(()=>{if(mode!=='draw')return;const sv=seedV,put=o=>{o.position.set(0,
 function warmStep(){if(warmNow){scene.remove(warmNow);warmNow=null}
   if(warmQ.length&&mode==='draw'&&!drawing&&!queue.length&&!tween){warmNow=warmQ.shift();scene.add(warmNow);sun.shadow.needsUpdate=true;if(warmNow.userData.lit)campLight.visible=true}}
 worldResources=new WorldResources({
- sharedGeometries:[tGeo,geoPole,geoCon,geoDec,geoPoleSh,geoConSh,geoDecSh,geoPalm,geoCactus,geoTuft,geoFlower,geoRock,geoWalls,geoRoof,geoWin,geoPost,geoPlank,geoLampHead],
- sharedMaterials:[matFol,matPole,matGrass,matRock,matWalls,matRoof,matGlow,matDark,matFlame,matFlame2,matBeam]
+ sharedGeometries:[tGeo,geoPole,geoCon,geoDec,geoPoleSh,geoConSh,geoDecSh,geoPalm,geoCactus,geoTuft,geoFlower,geoRock,HG.walls,HG.roof,HG.wins,HG.furn,HG.cloth,geoPost,geoPlank,geoLampHead],
+ sharedMaterials:[matFol,matPole,matGrass,matRock,matWalls,matRoof,matFurn,matCloth,matGlow,matDark,matFlame,matFlame2,matBeam]
 });
-changeLandscape=createWorldEdits({THREE,heights:Hgrid,grid:G,size:PW,waterY:WATER_Y,getWorld:()=>W,getGrowth:()=>growT,hAt:hRaw,obstacles:obst,addObstacle:addObst,glows,smoke,
+changeLandscape=createWorldEdits({THREE,heights:Hgrid,grid:G,size:PW,waterY:WATER_Y,getWorld:()=>W,getGrowth:()=>growT,hAt:hRaw,obstacles:obst,addObstacle:addObst,glows,smoke,addHouse:addHouseObst,houseScale:o=>o.s,
  cancelPath(){heroS.path=null;showPath(null);marker.visible=false},
- changed(){landscapePlay?.siege.refreshTerrain();applyHeights();buildGround();compose();sun.shadow.needsUpdate=true;clearTimeout(editRefresh);editRefresh=setTimeout(()=>refreshWorldDetail(true),80)}
+ changed(){landscapePlay?.siege.refreshTerrain();interact?.refresh();applyHeights();buildGround();compose();sun.shadow.needsUpdate=true;clearTimeout(editRefresh);editRefresh=setTimeout(()=>refreshWorldDetail(true),80)}
 });
 if(QS.get('activities')!=='0')landscapePlay=createLandscapePlay({
  THREE,scene,camera,renderer,canvas,C:{PW,HW,G,CELL,WATER_Y},getWorld:()=>W,getMode:()=>mode,getHero:()=>heroS,getSeason:()=>season,getNight:()=>sky.night,getRise:()=>rise,
  hAt,waterAt,typeAt,hitObst,pickTarget:groundAt,getRain:()=>sky.rainT>.5,setRain:on=>setWx(on?1:0),heights:()=>({grid:Float32Array.from(Hgrid,h=>h*rise),n:G+1,size:PW}),sunDir,
  audio:{ensure:ensureAudio,pluck,burst,get ctx(){return AC},get out(){return master},get muted(){return muted}},
- onImpact:event=>changeLandscape(event),toast,setHint,
+ onImpact:event=>changeLandscape(event),toast,setHint,sharedPrompt:true,busy:()=>!!(interact?.busy||interact?.talking),
  // manning the cannon: the wanderer stands beside it facing the castle while Paper Siege drives the camera
  enterSiege(site){if(mode!=='walk')return false;const c=site.cannon,k=site.castle,l=Math.hypot(k.x-c.x,k.z-c.z)||1,dx=(k.x-c.x)/l,dz=(k.z-c.z)/l;
   mode='siege';joyEnd();look=null;pinch0=0;heroS.path=null;showPath(null);marker.visible=false;heroS.vx=heroS.vz=heroS.sp=0;
@@ -1538,6 +1566,32 @@ if(QS.get('activities')!=='0')landscapePlay=createLandscapePlay({
  leaveSiege(){if(mode!=='siege')return;if(insideObst(heroS.x,heroS.z)){const [x,z]=nearestFree(heroS.x,heroS.z);heroS.x=x;heroS.z=z;heroS.y=hAt(x,z)}
   mode='flying';showUI();enterWalkCam(()=>{mode='walk';showUI();document.body.classList.add('walking')})}
 });
+
+/* ================= everything usable: climb, sit, rest, enter, villagers (src/activities/interactions.js) ================= */
+// a villager: the wanderer's skinned body in their own jacket, no accessories
+function makeVillagerBody(seed,jacket){if(!skinProto||!skinClips)return null;const model=THREE.SkeletonUtils.clone(skinProto),bones={},jc=new THREE.Color(jacket);
+  model.traverse(o=>{if(o.isBone)bones[o.name]=o;if(o.isMesh){o.castShadow=true;o.frustumCulled=false;o.material=o.material.clone();
+    if(o.material.name==='MI_Superhero_Male')o.material=dressMaterial(o.material,jc);else if(o.material.name.includes('Hair'))o.material.color.set(['#4a3426','#2b2020','#8a6a3a','#b8b0a0'][seed%4])}});
+  const wrap=new THREE.Group();wrap.scale.setScalar(SKIN_H/1.81*(.9+(seed*37%11)/100));wrap.add(model);const g=new THREE.Group();g.add(wrap);
+  const mixer=new THREE.AnimationMixer(model),acts={};for(const c of skinClips)acts[c.name]=mixer.clipAction(c);const S={model,wrap,bones,mixer,acts,cur:null};acts.idle.play();S.cur='idle';
+  return {g,bones,play(name,ts=1){skinPlay(S,name);if(S.acts[name])S.acts[name].timeScale=ts},update(dt){mixer.update(dt)},dispose(){mixer.stopAllAction();model.traverse(o=>{if(o.isMesh)o.material.dispose()})}}}
+// dollhouse cutaway: inside a house its walls drop to knee height and the roof lifts away
+function setHouseCut(o,cut){const i=W?W.houses.indexOf(o):-1;if(i<0)return;const I=W.inst;dummy.position.set(o.x,o.y*rise,o.z);dummy.rotation.set(0,o.rot,0);
+  dummy.scale.set(o.s,o.s*(cut?.22:1),o.s);dummy.updateMatrix();I.walls.setMatrixAt(i,dummy.matrix);
+  const k=cut?1e-4:o.s;dummy.scale.set(k,k,k);dummy.updateMatrix();I.roofs.setMatrixAt(i,dummy.matrix);I.wins.setMatrixAt(i,dummy.matrix);
+  I.walls.instanceMatrix.needsUpdate=I.roofs.instanceMatrix.needsUpdate=I.wins.instanceMatrix.needsUpdate=true;
+  const ga=glows.geometry.attributes.alpha;if(o.glow!==undefined)ga.setX(o.glow,cut?0:1);ga.needsUpdate=true}
+function setLanternGlow(i,on){const o=W&&W.lanterns[i];if(!o||o.glow===undefined)return;const ga=glows.geometry.attributes.alpha;ga.setX(o.glow,on&&!o.destroyed?1:0);ga.needsUpdate=true}
+function setHour(h){setSkyPreset(String(h));sky.pass=false;sky.hour=h;sky.target=h}
+const SOUNDS={leaves:()=>burst('grass',.08),land:()=>burst('grass',.1),ouch:()=>{pluck(330,0,.05);setTimeout(()=>pluck(247,0,.05),90)},crackle:()=>{burst('stone',.08);setTimeout(()=>burst('stone',.06),120)},
+  rest:()=>[392,330,262].forEach((f,i)=>setTimeout(()=>pluck(f,0,.04),i*160)),door:()=>burst('stone',.05),knock:()=>{burst('stone',.09);setTimeout(()=>burst('stone',.09),180)},
+  hello:()=>{pluck(660,0,.04);setTimeout(()=>pluck(880,0,.035),110)},thanks:()=>[523,659,784,1047].forEach((f,i)=>setTimeout(()=>pluck(f,0,.04),i*90)),light:()=>pluck(988,0,.04),snuff:()=>burst('paper',.05)};
+interact=createInteractions({THREE,scene,camera,canvas,C:{PW,HW,G,CELL,WATER_Y},hero:heroS,mode:()=>mode,hAt,waterAt,hitObst,nearestFree,astar,
+  showPath:p=>{showPath(p);marker.visible=!!p;if(p){const e=p[p.length-1];marker.position.set(e[0],hAt(e[0],e[1])+.006,e[1])}},
+  sky:()=>({night:sky.night,hour:sky.hour,rain:sky.rain}),season:()=>season,discover,toast,setHint,audio:{ensure:ensureAudio},fadeHint:()=>$('#hint').classList.add('fade'),
+  sound:k=>{if(AC&&SOUNDS[k])SOUNDS[k]()},setLamp:on=>{lampOn=on},focusFire:b=>{focusFire=b},stoke:b=>{b.stoke=2.2},
+  setLanternGlow,setHouseCut,setHour,makeBody:makeVillagerBody,canMakeBody:()=>!!(skinProto&&skinClips),
+  cannon:()=>{const p=landscapePlay;return p&&p.site&&p.debug.ready?{x:p.site.cannon.x,z:p.site.cannon.z,enter:()=>p.enterCannon()}:null}});
 
 frame();
 document.addEventListener('visibilitychange',()=>{if(!AC)return;if(document.hidden)AC.suspend();else AC.resume()});
@@ -1565,7 +1619,7 @@ if(DEBUG)Object.assign(window.__pw,{
  setQuality(value){livingWorld.setQuality(value)},
  impact:changeLandscape,hAt,hitObst,
  teleport(x,z){heroS.x=x;heroS.z=z;heroS.y=hAt(x,z);heroS.path=null;heroS.vx=heroS.vz=0},
- get play(){return landscapePlay},
+ get play(){return landscapePlay},get interact(){return interact},setHour,
 });
 if(DEBUG)Object.defineProperty(window.__pw,'resources',{get:()=>worldResources.stats});
 if(DEBUG)Object.defineProperty(window.__pw,'splats',{get:()=>({...livingWorld.stats})});

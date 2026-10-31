@@ -96,9 +96,10 @@ export function createLandscapePlay(host) {
   function updateUI() {
     if (disposed) return;
     const walking = mode() === 'walk', playing = siege.playing, targets = host.getWorld()?.impacts?.length||0,rain=!!host.getRain?.(),near=walking&&nearCannon();
-    const signature = `${walking}|${playing}|${near}|${bombs.equipped}|${ready}|${targets}|${rain}`;
+    const busy = !!host.busy?.(); // climbing, sitting, inside a tent: the bomb tools step aside
+    const signature = `${walking}|${playing}|${near}|${bombs.equipped}|${ready}|${targets}|${rain}|${busy}`;
     if(signature === lastUI)return; lastUI = signature;
-    ui.hidden = !walking&&!playing; panel.hidden = !walking; siegeHud.hidden = !playing; cannonButton.hidden = !near; if (near) document.getElementById('hint')?.classList.add('fade'); // the walk hint shares the bottom edge
+    ui.hidden = !walking&&!playing; panel.hidden = !walking || busy; siegeHud.hidden = !playing; cannonButton.hidden = !near || !!host.sharedPrompt; if (near && !host.sharedPrompt) document.getElementById('hint')?.classList.add('fade'); // the walk hint shares the bottom edge
     bombButton.setAttribute('aria-pressed', String(bombs.equipped));
     bombButton.setAttribute('aria-expanded',String(bombs.equipped));
     aimPanel.hidden = !walking || !bombs.equipped; hint.hidden = !walking;hint.innerHTML=fine?(bombs.equipped?'Move the mouse to aim, click to throw.<br>Drag to look · Space throws · Esc stops aiming.':'Right-click the ground to throw a bomb there.<br>B aims with the mouse · Space throws ahead.')
@@ -205,7 +206,7 @@ export function createLandscapePlay(host) {
     const target = event.target;
     if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) return false;
     const code = event.code || ({ b: 'KeyB', e: 'KeyE', f: 'KeyF', Escape: 'Escape' })[event.key];
-    if (code === 'KeyE' && nearCannon()) { if (down && !event.repeat) enterCannon(); event.preventDefault(); return true; }
+    if (code === 'KeyE' && nearCannon() && !host.sharedPrompt) { if (down && !event.repeat) enterCannon(); event.preventDefault(); return true; }
     if (code === 'KeyB') { if (down && !event.repeat) equip(!bombs.equipped); event.preventDefault(); return true; }
     if (code === 'Escape' && bombs.equipped) { if (down) equip(false); event.preventDefault(); return true; }
     if(code==='Space'&&/^(BUTTON|A)$/.test(target?.tagName||''))return false;
