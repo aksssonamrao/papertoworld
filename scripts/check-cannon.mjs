@@ -41,6 +41,19 @@ for(const [name,device] of Object.entries(devices)){
     run.perf.walk=await frames(page,3000);
     // far from the cannon: no prompt
     assert.equal(await page.locator('.pw-cannon').isVisible(),false);
+    if(!device.hasTouch){ // laptop: right-click throws there; B aims with the mouse and a click throws; F/Space throw
+      const vp=device.viewport,thrown=()=>page.evaluate(()=>window.__pw.play.bombTool.debug.stats.thrown),n0=await thrown();
+      await page.mouse.click(vp.width*.5,vp.height*.42,{button:'right'});await page.waitForFunction(n=>window.__pw.play.bombTool.debug.stats.thrown>n,n0,{timeout:5000});
+      assert.equal(await page.evaluate(()=>window.__pw.mode),'walk','right-click must not walk there');
+      await page.keyboard.press('b');await page.mouse.move(vp.width*.36,vp.height*.44);await page.mouse.move(vp.width*.38,vp.height*.45);await page.waitForTimeout(400);
+      const aim=await page.evaluate(()=>{const a=window.__pw.play.debug.aim;return{visible:a.visible,selected:!!a.selected,valid:!!a.prediction?.valid}});
+      assert(aim.visible&&aim.selected,'aim arc follows the mouse');await shot('00-mouse-aim');
+      await page.mouse.click(vp.width*.38,vp.height*.45);await page.waitForFunction(n=>window.__pw.play.bombTool.debug.stats.thrown>n+1,n0,{timeout:5000});
+      await page.waitForTimeout(400);await page.keyboard.press('f');await page.waitForFunction(n=>window.__pw.play.bombTool.debug.stats.thrown>n+2,n0,{timeout:5000});
+      await page.keyboard.press('Escape');assert.equal(await page.evaluate(()=>window.__pw.play.equipped),false);
+      run.checks.push({check:'laptop walk bombs: right-click, B + mouse aim + click, F',aim,thrown:await thrown()-n0});
+      await page.waitForTimeout(2500);
+    }
     await page.evaluate(()=>{const p=window.__pw,c=p.W.activitySite.cannon,k=p.W.activitySite.castle,l=Math.hypot(k.x-c.x,k.z-c.z);p.teleport(c.x-(k.x-c.x)/l*.55,c.z-(k.z-c.z)/l*.55)});
     await page.locator('.pw-cannon').waitFor({state:'visible'});await page.waitForTimeout(600);await shot('01-walk-near-cannon');
     const vp=device.viewport,prompt=await box(page,'.pw-cannon'),throwB=await box(page,'[data-action="throw"]');
@@ -57,10 +70,21 @@ for(const [name,device] of Object.entries(devices)){
     assert.equal(await page.locator('.pw-landscape-tools').isVisible(),false,'walk tools hide while playing');
     run.checks.push({check:'siege HUD fits and is clear',hud});
     run.perf.aim=await frames(page,3000);
+    const ring=await page.evaluate(()=>{const g=window.__pw.play.siege.debug.g;return{visible:g.land.visible,onTarget:g.onTarget}});
+    assert(ring.visible&&ring.onTarget,'the default aim shows a red landing ring on the castle');run.checks.push({check:'landing ring on target at start',...ring});
     // a real press on FIRE (touch tap or mouse click) fires the default shot
-    const before=await siege(page);await tap('.sg-fire');
+    if(!device.hasTouch){ // laptop: 1 2 3 pick ammo, arrows aim
+      await page.keyboard.press('Digit2');assert.equal(await page.evaluate(()=>window.__pw.play.siege.debug.g.sel),'bomb');
+      await page.keyboard.press('Digit1');const y0=await page.evaluate(()=>window.__pw.play.siege.debug.g.yaw);
+      await page.keyboard.down('ArrowLeft');await page.waitForTimeout(250);await page.keyboard.up('ArrowLeft');
+      const y1=await page.evaluate(()=>window.__pw.play.siege.debug.g.yaw);assert(y1!==y0,'arrow keys aim');
+      await page.keyboard.down('ArrowRight');await page.waitForTimeout(250);await page.keyboard.up('ArrowRight');
+      run.checks.push({check:'laptop cannon: number keys and arrows',yawChange:+(y1-y0).toFixed(3)});
+    }
+    // FIRE: a tap on phones, hold-and-release Space on a laptop
+    const before=await siege(page);if(device.hasTouch)await tap('.sg-fire');else{await page.keyboard.down('Space');await page.waitForTimeout(500);await page.keyboard.up('Space')}
     await page.waitForFunction(()=>window.__pw.play.siege.debug.state!=='aim');
-    run.checks.push({check:'FIRE button shoots',before,after:await siege(page)});
+    run.checks.push({check:device.hasTouch?'FIRE button shoots':'Space hold-and-release shoots',before,after:await siege(page)});
     await page.waitForFunction(()=>window.__pw.play.siege.debug.state==='aim'||window.__pw.play.siege.debug.state==='won'||window.__pw.play.siege.debug.state==='lost',null,{timeout:30000});
     // aimed ink bomb at the castle: record the flight and blast
     const solved=await page.evaluate(()=>{const d=window.__pw.play.siege.debug;return d.aimHit(.55)});

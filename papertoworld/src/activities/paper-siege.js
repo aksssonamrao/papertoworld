@@ -146,6 +146,7 @@ const CSS=`.sg-exit{position:absolute;right:12px;top:12px;pointer-events:auto;cu
 .sg-rows{text-align:left;font-size:14px;margin:4px 0 12px}.sg-rows div{display:flex;justify-content:space-between;padding:4px 2px;border-bottom:1px solid var(--line)}.sg-rows div span{color:var(--muted)}.sg-rows div b{font-weight:600;font-variant-numeric:tabular-nums}.sg-rows .tot{border:0;font:400 19px var(--serif);padding-top:9px}.sg-rows .tot b{font:400 22px var(--serif);color:var(--brass)}
 .sg-btns{display:flex;gap:8px;margin-top:6px}.sg-btns .primary{flex:1.4;width:auto;padding:12px}.sg-btns .ghost{flex:1;padding:12px 8px}
 .sg-strip{display:flex;gap:5px;justify-content:center;flex-wrap:wrap;margin-top:12px}.sg-strip button{appearance:none;width:30px;height:30px;border-radius:9px;border:1px solid var(--line);background:none;color:var(--ink);font:500 12px var(--sans);cursor:pointer}.sg-strip button.cur{background:var(--brass);color:var(--onbrass);border-color:var(--brass)}.sg-strip button:disabled{opacity:.3;cursor:default}
+@media (pointer:fine){.sg-chip::before{content:attr(data-key);position:absolute;top:5px;left:7px;font:600 9px var(--sans);opacity:.5}.sg-k{display:inline}}.sg-k{display:none}
 @media (max-width:420px){.sg-chip{width:54px;height:58px}.sg-fire{width:84px;height:84px}.sg-hint{padding:0 100px 0 12px}}`;
 const SVG={
   stone:'<svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="#8a8f9c" stroke="#2a2333" stroke-width="2"/><path d="M9 14q4-7 11-4" stroke="#d9dce6" stroke-width="2" fill="none" stroke-linecap="round"/></svg>',
@@ -158,8 +159,8 @@ function buildHud(host){
   const r=document.createElement('div');r.className='sg';
   r.innerHTML=`<button class="sg-exit" type="button" aria-label="Return to walking">Back to walk · Esc</button><div class="sg-stat"><div class="sg-pill sg-lvl"><b>Level 1</b><span></span></div><div class="sg-pill sg-score">Score <b>0</b></div><div class="sg-pill sg-kn"></div><div class="sg-pill sg-wind"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10.5" fill="none" stroke="#c9a06380" stroke-width="1.2"/><path d="M12 19V6m0 0l-4.5 5M12 6l4.5 5" fill="none" stroke="#c9a063" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><small>Wind</small></div></div>
 <div class="sg-hint"></div><div class="sg-banner"><h2></h2><p></p></div><div class="sg-load">Raising the drawbridge…</div>
-<div class="sg-ammo">${['stone','bomb','scatter'].map((k,i)=>`<button class="sg-chip" data-k="${k}" aria-label="${AMMO[k].name}" aria-pressed="${i===0}">${SVG[k]}<span>${AMMO[k].name}</span><i>0</i></button>`).join('')}</div>
-<button class="sg-fire" aria-label="Fire" disabled><svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="41" fill="rgba(30,20,13,.78)" stroke="rgba(201,160,99,.3)" stroke-width="2"/><circle class="ring" cx="46" cy="46" r="41" fill="none" stroke="#e0a455" stroke-width="6" stroke-linecap="round" stroke-dasharray="257.6" stroke-dashoffset="257.6" transform="rotate(-90 46 46)"/><circle cx="46" cy="46" r="32" fill="#c9a063"/><circle cx="46" cy="46" r="32" fill="none" stroke="#fff3d6" stroke-opacity=".5" stroke-width="1.5"/></svg><div class="lbl"><div>Fire<small>HOLD</small></div></div></button>
+<div class="sg-ammo">${['stone','bomb','scatter'].map((k,i)=>`<button class="sg-chip" data-k="${k}" data-key="${i+1}" aria-label="${AMMO[k].name} (key ${i+1})" aria-pressed="${i===0}">${SVG[k]}<span>${AMMO[k].name}</span><i>0</i></button>`).join('')}</div>
+<button class="sg-fire" aria-label="Fire" disabled><svg viewBox="0 0 92 92"><circle cx="46" cy="46" r="41" fill="rgba(30,20,13,.78)" stroke="rgba(201,160,99,.3)" stroke-width="2"/><circle class="ring" cx="46" cy="46" r="41" fill="none" stroke="#e0a455" stroke-width="6" stroke-linecap="round" stroke-dasharray="257.6" stroke-dashoffset="257.6" transform="rotate(-90 46 46)"/><circle cx="46" cy="46" r="32" fill="#c9a063"/><circle cx="46" cy="46" r="32" fill="none" stroke="#fff3d6" stroke-opacity=".5" stroke-width="1.5"/></svg><div class="lbl"><div>Fire<small>HOLD<span class="sg-k"> · SPACE</span></small></div></div></button>
 <div class="sg-card"></div>`;
   host.hud.append(r);
   r.querySelector('.sg-exit').addEventListener('click',()=>host.exit());
@@ -208,6 +209,9 @@ function setup(host,T,C){
   const DN=36;g.dots=createPointCloud(DN);g.dots.material.depthTest=false;g.dots.material.fog=false;
   g.dots.geometry.attributes.alpha.array.fill(.95);g.dots.geometry.attributes.color.array.fill(.95);g.dots.geometry.attributes.size.array.fill(.022);
   own(g.dots.geometry);own(g.dots.material);g.dots.renderOrder=9;g.dots.visible=false;root.add(g.dots);g.DN=DN;
+  // landing ring at the end of the predicted arc, sized to the selected ammo's blast; red when the shot would hit the castle
+  const lg=own(new T.RingGeometry(.82,1,40));lg.rotateX(-Math.PI/2);g.land=new T.Mesh(lg,own(new T.MeshBasicMaterial({color:'#ffd38a',transparent:true,opacity:.9,depthTest:false,depthWrite:false,fog:false})));
+  g.land.renderOrder=9;g.land.visible=false;root.add(g.land);
   // shock rings and fireballs
   const rg=own(new T.RingGeometry(.86,1,40));rg.rotateX(-Math.PI/2);g.rings=[...Array(3)].map(()=>{const m=new T.Mesh(rg,own(new T.MeshBasicMaterial({color:'#f3e3c0',transparent:true,depthWrite:false,fog:false,opacity:0})));m.visible=false;m.renderOrder=4;root.add(m);m.u={t:9};return m});
   const fgm=own(new T.SphereGeometry(1,14,10));g.balls=[...Array(2)].map(()=>{const m=new T.Mesh(fgm,own(new T.MeshBasicMaterial({color:'#ffb45a',transparent:true,depthWrite:false,blending:T.AdditiveBlending,fog:false,opacity:0})));m.visible=false;root.add(m);m.u={t:9};return m});
@@ -220,9 +224,9 @@ function setup(host,T,C){
   g.tmpQ=new T.Quaternion();g.up=new C.Vec3(0,1,0);
   // let the cannon barrel, dots etc. be compiled: make everything visible once
   g.warmM=[[g.mat.ball,icoGeo(.5)],[g.mat.bomb,sphereGeo(.46)],[g.mat.scat,icoGeo(.38)],[g.mat.fuse,g.fuseGeo=g.own(new T.CylinderGeometry(.004,.005,.03,5))]].map(([m,ge])=>{const o=new T.Mesh(ge,m);o.castShadow=true;o.position.set(0,-2,0);root.add(o);return o});
-  for(const o of[g.conf.mesh,g.puff.pts,g.glow.pts,g.dots,...g.rings,...g.balls])o._v=o.visible,o.visible=true;g.conf.mesh.count=1;
+  for(const o of[g.conf.mesh,g.puff.pts,g.glow.pts,g.dots,g.land,...g.rings,...g.balls])o._v=o.visible,o.visible=true;g.conf.mesh.count=1;
 }
-function hideWarm(){for(const o of g.warmM)g.root.remove(o);for(const o of[g.conf.mesh,g.puff.pts,g.glow.pts,g.dots,...g.rings,...g.balls])o.visible=false;g.conf.mesh.count=0;g.warmed=true}
+function hideWarm(){for(const o of g.warmM)g.root.remove(o);for(const o of[g.conf.mesh,g.puff.pts,g.glow.pts,g.dots,g.land,...g.rings,...g.balls])o.visible=false;g.conf.mesh.count=0;g.warmed=true}
 
 function buildCannon(host,T){
   const M=g.mat,own=g.own,c=g.cannon=new T.Group(),mk=(geo,mat,p)=>{const m=new T.Mesh(own(geo),mat);m.castShadow=true;if(p)m.position.set(...p);return m};
@@ -386,7 +390,7 @@ function blast(pos,R,J){const C=g.C,V=new C.Vec3();const core=R*.62;
 function wakeNear(p,r){for(const it of g.items){if(it.dead)continue;const b=it.body;if(b.sleepState===2&&b.position.distanceTo(p)<r)b.wakeUp()}}
 function explode(it){if(it.dead||it.exploded)return;it.exploded=true;const p=it.body.position.clone(),x=p.x/S,y=p.y/S,z=p.z/S;g.kill.push(it);
   reportImpact(it,x,y,z,.6,1);
-  g.lastBoom=[x,y,z,g.knLeft];blast(p,6.2,42);sfx.boom();slowmo(.6);g.shake=Math.max(g.shake,.55);
+  g.lastBoom=[x,y,z,g.knLeft];blast(p,7,46);sfx.boom();slowmo(.6);g.shake=Math.max(g.shake,.55);
     const rg=g.rings.find(m=>m.u.t>=1)||g.rings[0];rg.u={t:0,x,y:Math.max(g.host.hAt(x,z),y-.25)+.012,z,r:1.2};rg.visible=true;
   g.glow.add(x,y,z,0,0,0,.3,.4,1.9,rgb('#ffe2a0'),1,0,0);g.glow.add(x,y+.05,z,0,.3,0,.55,.3,1.5,rgb('#ff9a40'),.85,0,0);g.glow.add(x,y,z,0,0,0,.2,1.2,2.4,rgb('#fff3d0'),.5,0,0);
   for(let i=0;i<16;i++){const a=Math.random()*TAU,s=.5+Math.random()*1.1;g.puff.add(x,y,z,Math.cos(a)*s,.3+Math.random()*.9,Math.sin(a)*s,1.1+Math.random()*.8,.1,.34+Math.random()*.2,rgb(i%3?'#6b6257':'#2b2530'),.75,1.3,.1)}
@@ -527,17 +531,22 @@ function camUpdate(dt){
    cm.lift=lerp(cm.lift||0,Math.min(lift,1.5),1-Math.exp(-dt*6));c.position.copy(cm.pos);c.position.y+=cm.lift}
   if(g.shake>.01){const s=g.shake*.05;c.position.x+=(Math.random()-.5)*s;c.position.y+=(Math.random()-.5)*s;c.position.z+=(Math.random()-.5)*s;g.shake*=Math.exp(-6*dt)}else g.shake=0;
   c.lookAt(cm.look);const as=c.aspect,fv=(g.camMode==='aim'?(g.aimFov||44):g.camMode==='follow'?36:38)*(as<1.5?clamp(1+(1.5-as)*.9,1,1.85):1);if(Math.abs(c.fov-fv)>.02){c.fov=lerp(c.fov,fv,sm_(2.5));c.updateProjectionMatrix()}}
-function endIntro(){g.camMode='aim';g.state='aim';g.hud.banner.classList.remove('on');g.hud.fire.disabled=false;g.cam.pos.copy(g.host.camera.position);if(g.level<=2)setHint('Drag to aim · hold FIRE to charge, release to shoot',6000);hudText(true)}
+function endIntro(){g.camMode='aim';g.state='aim';g.hud.banner.classList.remove('on');g.hud.fire.disabled=false;g.cam.pos.copy(g.host.camera.position);if(g.level<=2||!g.hinted){g.hinted=true;{const aim=g.level<=4?'until the ring turns red':'along the dotted arc';setHint(matchMedia('(pointer:fine)').matches?`Drag or arrow keys to aim ${aim} · tap Space or FIRE to shoot, hold for more power · 1 2 3 ammo`:`Drag to aim ${aim} · tap FIRE to shoot, hold for more power`,8000)}}hudText(true)}
 function setHint(t,ms){const h=g.hud.hint;h.textContent=t;h.classList.toggle('on',!!t);clearTimeout(g.hintT);if(t&&ms)g.hintT=setTimeout(()=>h.classList.remove('on'),ms)}
 
 /* ---------- aiming preview ---------- */
-function traj(yaw,pitch,p,maxLen){
+function traj(yaw,pitch,p,maxLen,stopAtCastle){
   const host=g.host,mp=muzzle(g.V),cp=Math.cos(pitch),v=speedFor(p),dt=.025,dmp=Math.pow(1-.01,dt);
-  let x=mp.x*S,y=mp.y*S,z=mp.z*S,vx=Math.sin(yaw)*cp*v,vy=Math.sin(pitch)*v,vz=Math.cos(yaw)*cp*v;const pts=[[x,y,z]];let len=0;
-  for(let i=0;i<220;i++){vx=(vx+g.wind.x*dt)*dmp;vz=(vz+g.wind.z*dt)*dmp;vy=(vy-GRAV*dt)*dmp;const nx=x+vx*dt,ny=y+vy*dt,nz=z+vz*dt;len+=Math.hypot(nx-x,ny-y,nz-z);x=nx;y=ny;z=nz;pts.push([x,y,z]);if(y/S<host.hAt(x/S,z/S)-.02||Math.abs(x/S)>9||Math.abs(z/S)>9)break}
-  return{pts,len}}
+  let x=mp.x*S,y=mp.y*S,z=mp.z*S,vx=Math.sin(yaw)*cp*v,vy=Math.sin(pitch)*v,vz=Math.cos(yaw)*cp*v;const pts=[[x,y,z]];let len=0,hit=null;
+  const C=g.C,ce=stopAtCastle&&castleCentre(g.V3),L=g.lv,near=ce?(Math.hypot(L.cas.box[1]-L.cas.box[0],L.cas.box[3]-L.cas.box[2])/2+6)**2:0,a=g.trA||(g.trA=new C.Vec3()),b=g.trB||(g.trB=new C.Vec3()),res=g.trR||(g.trR=new C.RaycastResult());
+  for(let i=0;i<220;i++){vx=(vx+g.wind.x*dt)*dmp;vz=(vz+g.wind.z*dt)*dmp;vy=(vy-GRAV*dt)*dmp;const nx=x+vx*dt,ny=y+vy*dt,nz=z+vz*dt;
+    if(ce&&(nx-ce.x*S)**2+(nz-ce.z*S)**2<near){a.set(x,y,z);b.set(nx,ny,nz);res.reset();if(g.world.raycastClosest(a,b,{skipBackfaces:true},res)){const q=res.hitPointWorld;len+=Math.hypot(q.x-x,q.y-y,q.z-z);pts.push([q.x,q.y,q.z]);hit=res.body&&res.body.it||'ground';break}}
+    len+=Math.hypot(nx-x,ny-y,nz-z);x=nx;y=ny;z=nz;pts.push([x,y,z]);if(y/S<host.hAt(x/S,z/S)-.02||Math.abs(x/S)>9||Math.abs(z/S)>9)break}
+  return{pts,len,hit}}
 function preview(p){
-  const dg=g.dots.geometry.attributes.position,n=g.DN,{pts,len}=traj(g.yaw,g.pitch,p),shown=len*.45;let acc=0,k=0,next=0;const step=shown/(n-1);
+  const lv=g.level,full=lv<=4,{pts,len,hit}=traj(g.yaw,g.pitch,p,0,full),dg=g.dots.geometry.attributes.position,n=g.DN,shown=len*(full?1:lv<=7?.6:.45);let acc=0,k=0,next=0;const step=shown/(n-1);
+  g.land.visible=full&&g.warmed;if(full){const e=pts[pts.length-1],on=hit&&hit!=='ground'&&(hit.kind==='block'||hit.kind==='knight');g.onTarget=!!on;
+    g.land.position.set(e[0]/S,Math.max(e[1]/S,g.host.hAt(e[0]/S,e[2]/S))+.01,e[2]/S);g.land.scale.setScalar({stone:.22,bomb:.66,scatter:.4}[g.sel]||.3);g.land.material.color.set(on?'#ff5a3c':'#ffd38a')}
   for(let i=1;i<pts.length&&k<n;i++){const a=pts[i-1],b=pts[i],sl=Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2]);while(acc+sl>=next&&k<n&&next<=shown){const t=(next-acc)/sl;dg.setXYZ(k++,lerp(a[0],b[0],t)/S,lerp(a[1],b[1],t)/S,lerp(a[2],b[2],t)/S);next+=step}acc+=sl}
   g.dots.geometry.setDrawRange(0,k);dg.needsUpdate=true;g.dots.geometry.attributes.size.array.fill(.022)}
 
@@ -599,7 +608,7 @@ function tick(dt){
   // cannon pose + recoil
   g.recoil=(g.recoil||0)*Math.exp(-dt*9);g.cannon.rotation.y=g.yaw;g.pivot.rotation.x=-g.pitch;g.barrel.position.z=-g.recoil*.07;
   // trajectory preview while aiming
-  const showP=g.state==='aim'&&g.camMode==='aim';g.dots.visible=showP&&g.warmed;if(showP)preview(g.charge>=0?g.charge:g.lastPower);
+  const showP=g.state==='aim'&&g.camMode==='aim';g.dots.visible=showP&&g.warmed;if(showP)preview(g.charge>=0?g.charge:g.lastPower);else g.land.visible=false;
   fxUpdate(sdt);camUpdate(dt);windArrow();hudText(false);
   flushImpacts()}
 function flushImpacts(){const impacts=g.pendingImpacts.splice(0);for(const impact of impacts){g.host.onImpact(impact);if(!g)return}if(impacts.length)refreshTerrain()}
