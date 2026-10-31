@@ -1,6 +1,10 @@
 {
+  "installCommand": "cd .. && npm ci",
+  "buildCommand": "cd .. && npm run build && rm -rf papertoworld/dist && cp -r dist papertoworld/dist",
+  "outputDirectory": "dist",
   "cleanUrls": true,
   "headers": [
+    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
     { "source": "/vendor/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
     { "source": "/(.*)", "headers": [
       { "key": "X-Content-Type-Options", "value": "nosniff" },

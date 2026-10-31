@@ -13,3 +13,4 @@ videos/
 scripts/check-comparison.mjs
 scripts/compare-renderers.mjs
 scripts/create-comparison-video.mjs
+papertoworld/dist/
